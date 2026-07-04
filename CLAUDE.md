@@ -30,22 +30,27 @@ The course teaches and provides these — prefer them over exotic alternatives:
 - **Vision:** a **webcam** practical exists (Practical 9), so a USB webcam on the
   Pi is a course-supported alternative to the ESP32-CAM.
 
-## Important design note (resolve before deep coding)
+## Design decision — DECIDED: ESP32 + laptop
 
-The current scaffold assumes **ESP32 + a laptop Python backend + a Kotlin app**.
-The course, however, teaches the **Raspberry Pi** as the Python side and
-**Firebase via Pyrebase**. Two implications:
+**The demo runs on ESP32 + a laptop Python backend + a Kotlin app.** The student
+already owns a laptop; a Raspberry Pi would cost extra money, so the Pi option
+was declined. Treat this as settled — do not re-open it or migrate the backend
+to a Pi unless the user explicitly changes their mind.
 
-1. **Two-embedded-systems requirement:** using **ESP32 + Raspberry Pi** (Pi runs
-   the Python ML/backend) satisfies this cleanly with real embedded hardware and
-   matches the labs. Prefer this over "ESP32 + laptop." Only keep the laptop
-   backend if the group confirms it's acceptable.
-2. **Firebase library:** if the backend runs on the Pi, prefer **Pyrebase4** to
-   match the practicals. `firebase-admin` in the scaffold is fine for a laptop
-   but swap to Pyrebase if targeting the Pi.
+Consequences of this decision (keep the scaffold aligned to it):
 
-When in doubt, ask the user which hardware the demo will run on (ESP32 + Pi, or
-ESP32 + laptop) before committing to a backend implementation.
+1. **Two-embedded-systems requirement:** this is satisfied by **ESP32 sensor
+   node + ESP32-CAM** as the two embedded systems, with the laptop acting purely
+   as the ML/backend host (the Random Forest can't run on the ESP32). Confirm
+   with the group/lecturer that a laptop-as-backend is acceptable for the marking
+   rubric — that's the only open point, and it's a rubric question, not a code one.
+2. **Firebase library:** keep **`firebase-admin`** (already in the scaffold and
+   `requirements.txt`). Pyrebase4 was only relevant for a Pi backend, so it is
+   not needed here.
+
+_For future reference only:_ the course also teaches a Raspberry Pi + Pyrebase
+path. It is intentionally NOT used here. Ignore Pi/Pyrebase alternatives unless
+the hardware plan changes.
 
 ## Alternatives already supported by the course (offer these)
 

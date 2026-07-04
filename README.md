@@ -115,8 +115,14 @@ Search the repo for `TODO`. The main ones:
 
 ---
 
-## 5. Two-embedded-systems note
+## 5. Hardware plan & two-embedded-systems note
 
-This design uses **ESP32 + ESP32-CAM** as two embedded systems, with the laptop
-acting as the ML backend (the Random Forest can't run on the ESP32). Confirm with
-your group/lecturer that a laptop backend is acceptable for the requirement.
+**Decided: ESP32 + laptop.** The backend runs on a laptop (already owned) rather
+than a Raspberry Pi, to avoid extra cost. The two embedded systems are the
+**ESP32 sensor node** and the **ESP32-CAM node**; the laptop is only the ML
+backend, since the Random Forest can't run on the ESP32. Firebase uses
+`firebase-admin` (no Raspberry Pi / Pyrebase needed).
+
+The one thing to confirm with your group/lecturer is that a laptop-as-backend is
+acceptable for the two-embedded-systems requirement in the marking rubric — that's
+a rubric question, not a code change.
