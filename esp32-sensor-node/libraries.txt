@@ -1,0 +1,8 @@
+# Wokwi library dependencies for the ESP32 sensor node.
+# Wokwi reads this file and auto-installs these before compiling.
+Adafruit MPU6050
+Adafruit Unified Sensor
+Adafruit SSD1306
+Adafruit GFX Library
+TinyGPSPlus
+ArduinoJson

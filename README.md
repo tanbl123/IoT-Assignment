@@ -83,6 +83,11 @@ Stage 3 respects user autonomy and avoids alarming caregivers over a stumble.
 
 ## 3. Quick start
 
+> **No hardware yet? Simulate first.** The sensor node runs in
+> [Wokwi](https://wokwi.com) — see `esp32-sensor-node/WOKWI.md` for the wiring
+> (`diagram.json`) and how to trigger a fall in the browser. Move to physical
+> hardware later without changing the sketch logic.
+
 ```bash
 # ESP32 nodes: open the .ino files in Arduino IDE / PlatformIO, install the
 # libraries listed in each file's header, fill in the TODO credentials, flash.

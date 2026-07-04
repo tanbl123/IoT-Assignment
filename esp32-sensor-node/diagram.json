@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "author": "IoT Fall Detection",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-mpu6050", "id": "mpu", "top": -110, "left": 240, "attrs": {} },
+    { "type": "board-ssd1306", "id": "oled", "top": 130, "left": 250, "attrs": { "i2cAddress": "0x3c" } },
+    { "type": "wokwi-buzzer", "id": "bz", "top": -170, "left": 30, "attrs": { "volume": "0.1" } },
+    { "type": "wokwi-led", "id": "led_vib", "top": 60, "left": -160, "attrs": { "color": "blue", "label": "VIB" } },
+    { "type": "wokwi-led", "id": "led_sos", "top": 150, "left": -160, "attrs": { "color": "red", "label": "SOS" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 70, "left": -95, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 160, "left": -95, "attrs": { "value": "220" } },
+    { "type": "wokwi-pushbutton", "id": "btn", "top": 260, "left": 20, "attrs": { "color": "green", "label": "I'm OK" } }
+  ],
+  "connections": [
+    [ "esp:D21", "mpu:SDA", "green", [] ],
+    [ "esp:D22", "mpu:SCL", "yellow", [] ],
+    [ "esp:3V3", "mpu:VCC", "red", [] ],
+    [ "esp:GND.1", "mpu:GND", "black", [] ],
+
+    [ "esp:D21", "oled:SDA", "green", [] ],
+    [ "esp:D22", "oled:SCL", "yellow", [] ],
+    [ "esp:3V3", "oled:VCC", "red", [] ],
+    [ "esp:GND.1", "oled:GND", "black", [] ],
+
+    [ "esp:D25", "bz:1", "purple", [] ],
+    [ "esp:GND.2", "bz:2", "black", [] ],
+
+    [ "esp:D26", "r1:1", "blue", [] ],
+    [ "r1:2", "led_vib:A", "blue", [] ],
+    [ "led_vib:C", "esp:GND.2", "black", [] ],
+
+    [ "esp:D27", "r2:1", "orange", [] ],
+    [ "r2:2", "led_sos:A", "orange", [] ],
+    [ "led_sos:C", "esp:GND.2", "black", [] ],
+
+    [ "esp:D14", "btn:1.l", "gray", [] ],
+    [ "btn:2.l", "esp:GND.3", "black", [] ]
+  ],
+  "dependencies": {}
+}
