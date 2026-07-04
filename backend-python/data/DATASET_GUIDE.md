@@ -21,6 +21,7 @@ camera + accelerometer data through `feature_extraction.py`.
 | **UR Fall Detection (URFD)** | ✅ RGB (+depth) | ✅ yes | ✅ **YES — recommended** | Small: 70 sequences (30 falls + 40 ADLs). Manageable on a laptop. |
 | **UP-Fall (HAR-UP)** | ✅ 2 cameras | ✅ yes | ✅ yes, but impractical | **812 GB** full / **171 GB** feature set. Only usable if you download a small subset (per subject/activity/trial). |
 | Kaggle sensor-only sets (e.g. `uttejkumarkandagatla/fall-detection-dataset`) | ❌ none | ✅ yes | ❌ NO (no images) | Small CSV, but vision missing. |
+| Kaggle `pragyachandak/upfalldataset` (UP-Fall CSV copy) | ❌ none | ✅ yes (5 IMUs) | ❌ NO (no images) | **Checked July 2026:** 47 columns, all numeric sensors (Ankle/Belt/Wrist accelerometers, angular velocity, luminosity, brain, 6× infrared) + Subject/Activity/Trial/Tag. Camera image ZIPs were stripped out — sensor-only. |
 | Kaggle "Multiple Cameras Fall Dataset" | ✅ video | ❌ none | ❌ NO (no accelerometer) | Vision only. |
 | Collect our own (ESP32 + ESP32-CAM / laptop webcam) | ✅ | ✅ | ✅ yes | Most authentic; needs hardware + time. A good stretch/supplement. |
 
