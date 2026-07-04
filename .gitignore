@@ -1,0 +1,38 @@
+# ---- Secrets (never commit) ----
+.env
+*.env
+secrets.h
+serviceAccountKey.json
+google-services.json
+firebase_config.json
+*.pem
+*.key
+
+# ---- Python ----
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pkl
+*.joblib
+data/*.csv
+!data/README.md
+!data/sample.csv
+
+# ---- Arduino / PlatformIO ----
+.pio/
+build/
+*.hex
+*.bin
+
+# ---- Android / Gradle ----
+android-app-kotlin/.gradle/
+android-app-kotlin/build/
+android-app-kotlin/app/build/
+android-app-kotlin/local.properties
+*.iml
+.idea/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
