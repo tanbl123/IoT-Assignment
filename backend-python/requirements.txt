@@ -1,0 +1,8 @@
+numpy>=1.24
+pandas>=2.0
+scikit-learn>=1.3
+joblib>=1.3
+opencv-python>=4.8        # image feature extraction from ESP32-CAM frames
+pyserial>=3.5             # read the ESP32 sensor node over USB serial
+requests>=2.31           # pull frames from the ESP32-CAM /capture endpoint
+firebase-admin>=6.4       # Firebase Realtime Database upload
