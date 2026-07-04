@@ -26,14 +26,18 @@ CRED_PATH = os.getenv("FIREBASE_CRED", "serviceAccountKey.json")   # TODO
 DB_URL    = os.getenv("FIREBASE_DB_URL", "")                       # TODO: your RTDB URL
 
 _initialized = False
+_warned = False
 
 
 def _init():
-    global _initialized
+    global _initialized, _warned
     if _initialized:
         return True
     if not (_HAVE_FIREBASE and os.path.exists(CRED_PATH) and DB_URL):
-        print("[firebase] not configured — running in offline print mode.")
+        if not _warned:                    # warn once, not on every packet
+            print("[firebase] not configured — running in offline print mode "
+                  "(telemetry shown as '.', fall events shown in full).")
+            _warned = True
         return False
     cred = credentials.Certificate(CRED_PATH)
     firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
@@ -47,7 +51,8 @@ def push_telemetry(hr, spo2, status):
     if _init():
         db.reference("telemetry/latest").set(payload)
     else:
-        print("[firebase offline] telemetry:", payload)
+        # offline: a compact heartbeat so the demo isn't flooded with lines
+        print(".", end="", flush=True)
 
 
 def push_fall_event(hr, spo2, lat, lng):
@@ -58,5 +63,5 @@ def push_fall_event(hr, spo2, lat, lng):
         db.reference("falls").push(event)          # history log
         db.reference("alert").set(event)           # caregiver alert flag
     else:
-        print("[firebase offline] FALL EVENT:", event)
+        print("\n[firebase offline] FALL EVENT:", event)
     return event
