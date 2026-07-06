@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, recall_score
 import joblib
 
 from feature_extraction import FEATURE_NAMES
@@ -77,12 +77,25 @@ def main():
     cv = cross_val_score(clf, X, y, cv=5, scoring="f1")
     print(f"5-fold CV F1: {cv.mean():.3f} +/- {cv.std():.3f}")
     y_pred = clf.predict(X_te)
-    print("\nHold-out report:\n", classification_report(y_te, y_pred, digits=3))
+    print("\nHold-out report:\n",
+          classification_report(y_te, y_pred, digits=3, zero_division=0))
     print("Confusion matrix (rows=true, cols=pred):\n", confusion_matrix(y_te, y_pred))
     print("\nFeature importances:")
     for name, imp in sorted(zip(FEATURE_NAMES, clf.feature_importances_),
                             key=lambda t: -t[1]):
         print(f"  {name:20s} {imp:.3f}")
+
+    # The number that actually matters for a fall detector: are falls caught?
+    n_fall_total = int((y == 1).sum())
+    fall_recall = recall_score(y_te, y_pred, pos_label=1, zero_division=0)
+    print(f"\n>>> Fall-detection recall (falls actually caught): {fall_recall:.1%}")
+    print("    (Judge the model by THIS + the confusion matrix, not overall accuracy —")
+    print("     on imbalanced data accuracy is high even if no falls are detected.)")
+    if n_fall_total < 40:
+        print(f"\n[warning] only {n_fall_total} fall samples in the whole dataset. "
+              f"That is too few to train/evaluate reliably — the model may never "
+              f"predict 'fall'. Add more fall trials (UP-Fall Activities 1-5) to "
+              f"data/upfall_raw/, rebuild with build_dataset_upfall.py, and re-run.")
 
     joblib.dump({"model": clf, "features": FEATURE_NAMES}, MODEL_PATH)
     print(f"\nSaved model -> {MODEL_PATH}")
