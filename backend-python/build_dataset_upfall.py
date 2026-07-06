@@ -164,7 +164,9 @@ def process_trial(csv_path):
             n_fall += 1
         else:
             n_adl += 1
-        yield fv, label
+        # `prefix` (SubjectXActivityYTrialZ) groups windows from the same
+        # recording so evaluation can keep them out of train+test at once.
+        yield fv, label, prefix
     print(f"  {prefix}: {n_fall} fall + {n_adl} not-fall windows")
 
 
@@ -181,11 +183,12 @@ def main():
         return
 
     print(f"Building dataset from {len(csvs)} trial(s) in {RAW_DIR}/ ...")
-    rows, labels = [], []
+    rows, labels, groups = [], [], []
     for csv_path in csvs:
-        for fv, label in process_trial(csv_path):
+        for fv, label, group in process_trial(csv_path):
             rows.append(fv)
             labels.append(label)
+            groups.append(group)
 
     if not rows:
         print("No windows produced — check the files.")
@@ -193,6 +196,7 @@ def main():
 
     df = pd.DataFrame(rows, columns=FEATURE_NAMES)
     df["label"] = labels
+    df["group"] = groups          # recording id, for leakage-free evaluation
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     df.to_csv(OUT_PATH, index=False)
 

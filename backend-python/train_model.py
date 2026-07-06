@@ -22,7 +22,8 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import (train_test_split, cross_val_score,
+                                     StratifiedGroupKFold)
 from sklearn.metrics import classification_report, confusion_matrix, recall_score
 import joblib
 
@@ -65,17 +66,33 @@ def main():
 
     X = df[FEATURE_NAMES].values
     y = df["label"].values
-
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=0.25, stratify=y, random_state=42)
+    groups = df["group"].values if "group" in df.columns else None
 
     clf = RandomForestClassifier(
         n_estimators=200, max_depth=None, class_weight="balanced", random_state=42)
-    clf.fit(X_tr, y_tr)
 
     # honest evaluation
-    cv = cross_val_score(clf, X, y, cv=5, scoring="f1")
-    print(f"5-fold CV F1: {cv.mean():.3f} +/- {cv.std():.3f}")
+    if groups is not None and len(np.unique(groups)) >= 5:
+        # Group-aware: windows from the same recording (SubjectXActivityYTrialZ)
+        # never land in train AND test together, so the score isn't inflated by
+        # near-duplicate overlapping windows. This is the number to report.
+        n_groups = len(np.unique(groups))
+        print(f"Leakage-free evaluation: StratifiedGroupKFold over {n_groups} "
+              f"recordings (no overlapping-window leakage between train/test).")
+        cv_scores = cross_val_score(clf, X, y, cv=StratifiedGroupKFold(n_splits=5),
+                                    groups=groups, scoring="f1")
+        tr_idx, te_idx = next(StratifiedGroupKFold(n_splits=4).split(X, y, groups))
+        X_tr, X_te, y_tr, y_te = X[tr_idx], X[te_idx], y[tr_idx], y[te_idx]
+    else:
+        print("[note] no 'group' column — using a plain stratified split. This "
+              "can look optimistic when windows overlap. Rebuild dataset.csv with "
+              "build_dataset_upfall.py to get leakage-free evaluation.")
+        cv_scores = cross_val_score(clf, X, y, cv=5, scoring="f1")
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=0.25, stratify=y, random_state=42)
+
+    clf.fit(X_tr, y_tr)
+    print(f"5-fold CV F1: {cv_scores.mean():.3f} +/- {cv_scores.std():.3f}")
     y_pred = clf.predict(X_te)
     print("\nHold-out report:\n",
           classification_report(y_te, y_pred, digits=3, zero_division=0))

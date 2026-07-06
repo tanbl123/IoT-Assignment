@@ -79,6 +79,24 @@ Notes:
 - `data/upfall_raw/` and `data/dataset.csv` are **git-ignored** (the raw
   downloads are large; the dataset is generated), so they stay on your machine.
 
+## How much data, and honest evaluation
+
+Falls are brief, so each fall trial yields only ~3 fall windows; daily-activity
+trials yield many not-fall windows. To avoid a misleading result:
+
+- **Get enough falls.** Download UP-Fall **Activities 1-5** across several
+  **subjects** and trials. One subject (~40 falls) proves the pipeline works but
+  is not enough to claim the model generalises.
+- **Leakage-free evaluation.** `dataset.csv` includes a `group` column (the
+  recording id). `train_model.py` uses `StratifiedGroupKFold` on it so
+  overlapping windows from the same recording never appear in both train and
+  test — otherwise near-duplicate windows inflate accuracy toward a fake 100%.
+- **Subject independence (best practice).** For the strongest report, train on
+  some subjects and test on others (e.g. Subjects 1-2 train, Subject 3 test).
+  A realistic ~85-95% on unseen subjects is more credible than 100% on one.
+- **Judge by fall recall + confusion matrix, not accuracy.** On imbalanced data
+  accuracy is high even if the model never detects a fall.
+
 ## Fallback: URFD
 If UP-Fall downloads are too heavy, use URFD instead and we write an equivalent
 `build_dataset_urfd.py` adapter the same way.
