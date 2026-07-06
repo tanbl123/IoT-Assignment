@@ -19,12 +19,14 @@ runs end-to-end today. REPLACE it with real data before reporting results.
 
 from __future__ import annotations
 import os
+import re
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import (train_test_split, cross_val_score,
                                      StratifiedGroupKFold)
-from sklearn.metrics import classification_report, confusion_matrix, recall_score
+from sklearn.metrics import (classification_report, confusion_matrix,
+                             recall_score, precision_score)
 import joblib
 
 from feature_extraction import FEATURE_NAMES
@@ -113,6 +115,34 @@ def main():
               f"That is too few to train/evaluate reliably — the model may never "
               f"predict 'fall'. Add more fall trials (UP-Fall Activities 1-5) to "
               f"data/upfall_raw/, rebuild with build_dataset_upfall.py, and re-run.")
+
+    # Subject-independent (leave-one-subject-out) evaluation: the gold standard
+    # for fall detection — train on all-but-one person, test on the person the
+    # model has never seen, and rotate. Answers "does it generalise to new users?"
+    if groups is not None:
+        subj = np.array([int(m.group(1)) if (m := re.search(r"Subject(\d+)", str(g)))
+                         else -1 for g in groups])
+        usubj = [s for s in np.unique(subj) if s >= 0]
+        if len(usubj) >= 2:
+            print(f"\nSubject-independent (leave-one-subject-out) over "
+                  f"{len(usubj)} subjects — train on the rest, test on the held-out one:")
+            recalls, precisions = [], []
+            for s in usubj:
+                tr, te = subj != s, subj == s
+                if y[te].sum() == 0:      # no falls to test for this subject
+                    continue
+                m = RandomForestClassifier(n_estimators=200, class_weight="balanced",
+                                           random_state=42).fit(X[tr], y[tr])
+                p = m.predict(X[te])
+                r = recall_score(y[te], p, pos_label=1, zero_division=0)
+                pr = precision_score(y[te], p, pos_label=1, zero_division=0)
+                recalls.append(r); precisions.append(pr)
+                print(f"  held-out Subject {s}: fall recall {r:5.1%}   "
+                      f"precision {pr:5.1%}   (falls tested: {int(y[te].sum())})")
+            if recalls:
+                print(f"  --> average over unseen subjects: "
+                      f"recall {np.mean(recalls):.1%}, precision {np.mean(precisions):.1%}")
+                print("      (This is the most honest number for your report.)")
 
     joblib.dump({"model": clf, "features": FEATURE_NAMES}, MODEL_PATH)
     print(f"\nSaved model -> {MODEL_PATH}")
