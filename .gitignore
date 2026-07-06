@@ -19,6 +19,12 @@ data/*.csv
 !data/README.md
 !data/sample.csv
 
+# ---- Datasets (large / generated — never commit) ----
+# Raw UP-Fall / URFD downloads (can be many GB) and the generated training set.
+upfall_raw/
+urfd_raw/
+dataset.csv
+
 # ---- Arduino / PlatformIO ----
 .pio/
 build/

@@ -48,7 +48,37 @@ images.
 - For the live demo without an ESP32-CAM, a **laptop webcam** can act as the
   camera source (`live_inference.py` already pulls frames).
 
-## Next step
-Once a dataset (or a subset) is downloaded, note its **folder/file structure**
-(where the image frames are, and the accelerometer file + its columns). Then we
-write an adapter — e.g. `build_dataset_urfd.py` — that produces `data/dataset.csv`.
+## Building the training set from UP-Fall
+
+An adapter, `../build_dataset_upfall.py`, converts the UP-Fall per-trial
+downloads into `dataset.csv` using the shared `feature_extraction.py`
+(so image + motion features stay identical to live inference).
+
+Per Subject/Activity/Trial on the HAR-UP site, download **only two** files:
+- **DataSet** (the sensor CSV — motion / belt accelerometer)
+- **Camera1** (the zip of RGB frames — image)
+
+Then:
+
+```bash
+# put the downloads here (keep their SubjectXActivityYTrialZ names):
+#   data/upfall_raw/Subject1Activity1Trial1.csv
+#   data/upfall_raw/Subject1Activity1Trial1Camera1.zip
+#   ... (a mix of falls: Activity 1-5, and daily activities: Activity 6-11)
+
+pip install -r requirements.txt      # needs opencv-python for image features
+python build_dataset_upfall.py       # -> writes data/dataset.csv
+python train_model.py                # real image + motion accuracy
+```
+
+Notes:
+- The Camera1 zips are read **directly** — no need to unzip them.
+- Windows are labelled from the UP-Fall **Tag** column (per-sample): Tag 1-5 =
+  fall, everything else = not-fall. This labels only the real fall moment, not
+  the standing period before it.
+- `data/upfall_raw/` and `data/dataset.csv` are **git-ignored** (the raw
+  downloads are large; the dataset is generated), so they stay on your machine.
+
+## Fallback: URFD
+If UP-Fall downloads are too heavy, use URFD instead and we write an equivalent
+`build_dataset_urfd.py` adapter the same way.
