@@ -9,9 +9,16 @@ honest evaluation used in train_model.py, and writes:
   figures/per_subject_loso.png       leave-one-subject-out recall & precision
   figures/feature_importances.png    what the Random Forest relies on
   figures/metrics.json               all numbers, machine-readable
+  results-dashboard.html             self-contained web dashboard, live numbers
+                                     (dashboard_template.html filled from the data)
 
 Every number and bar is computed live from dataset.csv — nothing is hard-coded —
-so the charts are genuine output of your data, ready for the report/slides.
+so the charts and dashboard are genuine output of your data. Change the dataset,
+re-run, and everything updates; the outputs are git-ignored (never stale).
+
+This is SEPARATE from live_inference.py (the real-time sensor/camera detection):
+run it on demand when you want to see or present the metrics, not during a live
+demo.
 
 Run:  python evaluate_and_plot.py
 """
@@ -20,6 +27,7 @@ from __future__ import annotations
 import os
 import re
 import json
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -199,26 +207,47 @@ def main():
     fig.savefig(f"{FIG_DIR}/feature_importances.png", facecolor="white")
     plt.close(fig)
 
-    # ---------- metrics.json ----------
-    out = {
+    # ---------- structured metrics (drives both metrics.json and the dashboard) ----------
+    nf = rep["0"]
+    data = {
+        "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dataset": {"windows": len(df), "falls": int((y == 1).sum()),
                     "not_falls": int((y == 0).sum()),
                     "recordings": n_records, "subjects": n_subjects},
-        "cv_f1_mean": round(float(cv.mean()), 3), "cv_f1_std": round(float(cv.std()), 3),
-        "holdout": {"fall_precision": round(fall["precision"], 3),
-                    "fall_recall": round(fall["recall"], 3),
-                    "fall_f1": round(fall["f1-score"], 3),
-                    "accuracy": round(rep["accuracy"], 3),
-                    "confusion_matrix": cm.tolist()},
-        "subject_independent": {"recall": round(loso_recall, 3),
-                                "precision": round(loso_prec, 3),
-                                "per_subject": loso},
-        "feature_importances": {n: round(float(v), 3) for n, v in importances},
+        "cv": {"mean": round(float(cv.mean()), 3), "std": round(float(cv.std()), 3)},
+        "holdout": {
+            "fall": {"precision": round(fall["precision"], 3), "recall": round(fall["recall"], 3),
+                     "f1": round(fall["f1-score"], 3), "support": int(fall["support"])},
+            "notfall": {"precision": round(nf["precision"], 3), "recall": round(nf["recall"], 3),
+                        "f1": round(nf["f1-score"], 3), "support": int(nf["support"])},
+            "accuracy": round(rep["accuracy"], 3),
+            "support_total": int(fall["support"] + nf["support"]),
+            "cm": {"tn": int(cm[0, 0]), "fp": int(cm[0, 1]),
+                   "fn": int(cm[1, 0]), "tp": int(cm[1, 1])},
+        },
+        "loso": {"recall": round(loso_recall, 3), "precision": round(loso_prec, 3),
+                 "per_subject": [{"subject": r["subject"],
+                                  "recall": round(r["recall"], 3),
+                                  "precision": round(r["precision"], 3),
+                                  "falls": r["falls"]} for r in loso]},
+        "features": [{"name": n, "importance": round(float(v), 3),
+                      "modality": "image" if n in IMAGE_FEATURES else "motion"}
+                     for n, v in importances],
     }
     with open(f"{FIG_DIR}/metrics.json", "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump(data, f, indent=2)
 
-    print(f"\nSaved 4 charts + metrics.json to {FIG_DIR}/")
+    # ---------- fill the HTML dashboard template with the LIVE numbers ----------
+    tpl_path, out_html = "dashboard_template.html", "results-dashboard.html"
+    if os.path.exists(tpl_path):
+        with open(tpl_path, encoding="utf-8") as f:
+            tpl = f.read()
+        with open(out_html, "w", encoding="utf-8") as f:
+            f.write(tpl.replace("__DATA__", json.dumps(data)))
+        print(f"\nSaved 4 charts + metrics.json to {FIG_DIR}/, and {out_html} (live numbers).")
+    else:
+        print(f"\nSaved 4 charts + metrics.json to {FIG_DIR}/ "
+              f"({tpl_path} missing — skipped HTML dashboard).")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,12 @@ urfd_raw/
 # committed on purpose, so teammates can run train_model.py without the multi-GB
 # raw images. Add it with:  git add -f backend-python/data/dataset.csv
 
+# ---- Generated evaluation output — NEVER commit (always regenerate) ----
+# Produced by `python evaluate_and_plot.py` from the CURRENT dataset.csv, so the
+# figures + dashboard can never go stale. Source of truth = the script + template.
+figures/
+results-dashboard.html
+
 # ---- Arduino / PlatformIO ----
 .pio/
 build/
