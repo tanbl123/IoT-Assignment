@@ -37,6 +37,7 @@ The Camera1 zips are read **directly** (no need to unzip them).
 from __future__ import annotations
 import os
 import re
+import sys
 import glob
 import zipfile
 from datetime import datetime
@@ -52,7 +53,12 @@ except ImportError:
     cv2 = None
 
 # ===================== config =====================
-RAW_DIR   = os.path.join("data", "upfall_raw")
+# Where the UP-Fall DataSet CSVs + Camera1 zips live. Pass a folder as the first
+# argument to override, e.g. the HAR-UP bulk downloader's output:
+#   python build_dataset_upfall.py "C:/Users/User/Documents/HAR-UP/DataBaseDownload"
+# Folders are searched recursively, so the downloader's Subject/Activity/Trial
+# tree works as-is.
+RAW_DIR   = sys.argv[1] if len(sys.argv) > 1 else os.path.join("data", "upfall_raw")
 OUT_PATH  = os.path.join("data", "dataset.csv")
 
 # UP-Fall "DataSet" CSV layout (0-indexed columns), 2 header rows then data:
@@ -175,10 +181,13 @@ def main():
         print("[warning] opencv-python not installed. Image features will be 0. "
               "Run: pip install opencv-python  (required for image + motion).")
 
-    csvs = sorted(p for p in glob.glob(os.path.join(RAW_DIR, "*.csv"))
+    # recursive: handles both a flat folder and the downloader's
+    # Subject/Activity/Trial tree. Each Camera1 zip sits next to its CSV.
+    csvs = sorted(p for p in glob.glob(os.path.join(RAW_DIR, "**", "*.csv"),
+                                       recursive=True)
                   if "Camera" not in os.path.basename(p))
     if not csvs:
-        print(f"No trial CSVs found in {RAW_DIR}/. "
+        print(f"No trial CSVs found under {RAW_DIR}/. "
               f"Download UP-Fall DataSet + Camera1 files there first.")
         return
 
