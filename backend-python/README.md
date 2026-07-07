@@ -17,12 +17,23 @@ cd IoT-Assignment/backend-python
 
 # 2. Create an isolated environment (recommended, so it won't clash with other projects)
 python -m venv fall-detection-env
+
+#    Windows PowerShell: if you get "running scripts is disabled on this system",
+#    run this once (safe — it only affects this terminal), then activate:
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 fall-detection-env\Scripts\Activate.ps1      # Windows PowerShell
 # source fall-detection-env/bin/activate     # macOS / Linux
 
 # 3. Install the libraries
 python -m pip install -r requirements.txt
 ```
+
+> **PowerShell won't activate the venv?** The error "running scripts is disabled
+> on this system" is a Windows default, not a bug. Either run the
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` line above first,
+> or skip activation and call the venv's Python directly:
+> `fall-detection-env\Scripts\python.exe -m pip install -r requirements.txt`
+> then `fall-detection-env\Scripts\python.exe train_model.py`.
 
 Then run whichever part you want:
 
