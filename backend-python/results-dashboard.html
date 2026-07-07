@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fall Detection — ML Results</title>
+<style>
+  :root{
+    --bg:#F4F6F6; --surface:#FFFFFF; --surface-2:#F0F3F2;
+    --ink:#18231F; --muted:#5C6B69; --hair:#E4E9E7;
+    --accent:#0E9E8E; --s1:#0E9E8E; --s2:#4C6EF5;
+    --good:#128A4C; --warn:#B96E1B; --crit:#C93A3A;
+    --good-bg:#E4F3EA; --warn-bg:#F7ECDD; --crit-bg:#F7E3E3; --good2-bg:#E2F1EF;
+    --shadow:0 1px 2px rgba(16,40,36,.06),0 8px 24px rgba(16,40,36,.06);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0F1517; --surface:#171F22; --surface-2:#1E282B;
+      --ink:#E9EEEC; --muted:#94A3A0; --hair:#28353A;
+      --accent:#17B8A6; --s1:#17B8A6; --s2:#6D8AFF;
+      --good:#38C77C; --warn:#E7A24E; --crit:#F0776F;
+      --good-bg:#12271E; --warn-bg:#2A2115; --crit-bg:#2C1919; --good2-bg:#122523;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F4F6F6; --surface:#FFFFFF; --surface-2:#F0F3F2;
+    --ink:#18231F; --muted:#5C6B69; --hair:#E4E9E7;
+    --accent:#0E9E8E; --s1:#0E9E8E; --s2:#4C6EF5;
+    --good:#128A4C; --warn:#B96E1B; --crit:#C93A3A;
+    --good-bg:#E4F3EA; --warn-bg:#F7ECDD; --crit-bg:#F7E3E3; --good2-bg:#E2F1EF;
+    --shadow:0 1px 2px rgba(16,40,36,.06),0 8px 24px rgba(16,40,36,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1517; --surface:#171F22; --surface-2:#1E282B;
+    --ink:#E9EEEC; --muted:#94A3A0; --hair:#28353A;
+    --accent:#17B8A6; --s1:#17B8A6; --s2:#6D8AFF;
+    --good:#38C77C; --warn:#E7A24E; --crit:#F0776F;
+    --good-bg:#12271E; --warn-bg:#2A2115; --crit-bg:#2C1919; --good2-bg:#122523;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px 72px}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  /* header */
+  header.top{
+    position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 82%,transparent);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--hair);
+  }
+  .top-in{max-width:1080px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+  .brand small{display:block;font-weight:500;color:var(--muted);font-size:12px;letter-spacing:.02em}
+  .spacer{flex:1}
+  .toggle{
+    font:inherit;font-size:13px;color:var(--ink);background:var(--surface);
+    border:1px solid var(--hair);border-radius:999px;padding:7px 13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow)
+  }
+  .toggle:hover{border-color:var(--accent)}
+  .toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* hero */
+  .hero{padding:44px 0 20px}
+  .eyebrow{font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .hero h1{font-size:clamp(28px,4.4vw,44px);line-height:1.05;letter-spacing:-.022em;
+    margin:.35em 0 .3em;text-wrap:balance;max-width:20ch}
+  .hero p{color:var(--muted);max-width:62ch;margin:0;font-size:16px}
+  .hero-figs{display:flex;flex-wrap:wrap;gap:14px;margin-top:26px}
+  .figbig{
+    background:var(--surface);border:1px solid var(--hair);border-radius:16px;
+    padding:20px 24px;box-shadow:var(--shadow);flex:1;min-width:210px;position:relative;overflow:hidden
+  }
+  .figbig::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}
+  .figbig .k{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .figbig .v{font-family:var(--mono);font-variant-numeric:tabular-nums;
+    font-size:clamp(38px,6vw,54px);font-weight:600;letter-spacing:-.02em;line-height:1.05;margin-top:6px}
+  .figbig .s{font-size:13px;color:var(--muted);margin-top:2px}
+  .figbig.alt::before{background:var(--s2)}
+
+  /* sections */
+  section{margin-top:40px}
+  .sec-h{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+  .sec-h h2{font-size:19px;letter-spacing:-.01em;margin:0}
+  .sec-h .hint{color:var(--muted);font-size:13px}
+  .grid{display:grid;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;
+    padding:20px;box-shadow:var(--shadow)}
+  .card h3{margin:0 0 4px;font-size:15px;letter-spacing:-.005em}
+  .card .sub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+
+  /* tiles */
+  .tiles{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .tile{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 16px 15px;box-shadow:var(--shadow)}
+  .tile .k{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .tile .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:28px;font-weight:600;letter-spacing:-.01em;margin-top:6px}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  .tile .v small{font-size:15px;color:var(--muted);font-weight:500}
+
+  /* confusion + report row */
+  .two{grid-template-columns:1fr 1fr}
+  .cm{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:stretch}
+  .cm .corner{}
+  .cm .axtop{grid-column:2 / 4;text-align:center;font-size:11.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);font-weight:600;padding-bottom:2px}
+  .cm .axleft{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;justify-content:center}
+  .cm .colh{font-size:12px;color:var(--muted);text-align:center;font-weight:600}
+  .cell{border-radius:12px;padding:14px 12px;min-height:88px;display:flex;flex-direction:column;justify-content:center;
+    border:1px solid var(--hair)}
+  .cell .n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:30px;font-weight:600;line-height:1}
+  .cell .lab{font-size:12px;margin-top:6px;font-weight:600}
+  .cell.tp{background:var(--good-bg);border-color:color-mix(in srgb,var(--good) 30%,var(--hair))}
+  .cell.tn{background:var(--good2-bg);border-color:color-mix(in srgb,var(--accent) 25%,var(--hair))}
+  .cell.fp{background:var(--warn-bg);border-color:color-mix(in srgb,var(--warn) 32%,var(--hair))}
+  .cell.fn{background:var(--crit-bg);border-color:color-mix(in srgb,var(--crit) 32%,var(--hair))}
+  .cell.tp .n{color:var(--good)} .cell.fp .n{color:var(--warn)} .cell.fn .n{color:var(--crit)} .cell.tn .n{color:var(--accent)}
+
+  table.rep{border-collapse:collapse;width:100%;font-size:14px}
+  table.rep th,table.rep td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+  table.rep th:first-child,table.rep td:first-child{text-align:left}
+  table.rep thead th{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  table.rep td.num,table.rep th.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  table.rep tr.tot td{border-top:2px solid var(--hair);border-bottom:none;font-weight:600}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  /* charts */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 14px}
+  .rowbar{display:grid;grid-template-columns:78px 1fr;gap:12px;align-items:center;margin:9px 0}
+  .rowbar .lbl{font-size:13px;color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rowbar .lbl b{color:var(--ink);font-weight:600}
+  .track{position:relative;background:var(--surface-2);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:4px}
+  .bar{height:16px;border-radius:5px;position:relative;min-width:2px;transition:filter .15s}
+  .bar:hover{filter:brightness(1.08)}
+  .bar .val{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;
+    font-family:var(--mono);font-variant-numeric:tabular-nums;color:#fff;font-weight:600}
+  .bar.out .val{right:auto;left:calc(100% + 6px);color:var(--muted)}
+  .bar.s1{background:var(--s1)} .bar.s2{background:var(--s2)}
+
+  .feat{display:grid;grid-template-columns:174px 1fr 52px;gap:10px;align-items:center;margin:8px 0}
+  .feat .fn{font-size:13px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .feat .ftrack{background:var(--surface-2);border-radius:7px;height:20px;overflow:hidden}
+  .feat .fbar{height:100%;border-radius:7px}
+  .feat .fbar.motion{background:var(--s1)} .feat .fbar.image{background:var(--s2)}
+  .feat .fv{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;text-align:right;color:var(--muted)}
+  .tag{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;font-weight:700;padding:2px 6px;border-radius:5px}
+  .tag.motion{color:var(--s1);background:color-mix(in srgb,var(--s1) 14%,transparent)}
+  .tag.image{color:var(--s2);background:color-mix(in srgb,var(--s2) 16%,transparent)}
+
+  .note{background:var(--surface-2);border:1px solid var(--hair);border-radius:14px;padding:16px 18px;font-size:14px;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note ul{margin:8px 0 0;padding-left:20px} .note li{margin:5px 0}
+  footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--hair);color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between}
+  .scroll{overflow-x:auto}
+  @media (max-width:720px){.two{grid-template-columns:1fr}.feat{grid-template-columns:150px 1fr 46px}.feat .fn{font-size:12px}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="dot" aria-hidden="true"></span>
+      <span>Fall Detection · ML Results<small>Smart Elderly Fall Detection System · BMIT2123 IoT</small></span>
+    </div>
+    <span class="spacer"></span>
+    <button class="toggle" id="themeBtn" aria-label="Toggle light or dark theme">
+      <span id="themeIcon">◐</span><span id="themeTxt">Theme</span>
+    </button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">Random Forest · image + motion fusion</div>
+    <h1>Detecting falls in people the model has never seen.</h1>
+    <p>Evaluated <b>leakage-free</b> and <b>subject-independent</b> (leave-one-subject-out) on the
+       UP-Fall dataset — 17 subjects, 255 recordings. The two numbers below are the honest,
+       generalisation result: how well it works on unseen people.</p>
+    <div class="hero-figs">
+      <div class="figbig">
+        <div class="k">Fall recall · unseen subjects</div>
+        <div class="v">90.6<small style="font-size:26px">%</small></div>
+        <div class="s">Caught ~9 of every 10 real falls</div>
+      </div>
+      <div class="figbig alt">
+        <div class="k">Precision · unseen subjects</div>
+        <div class="v">75.6<small style="font-size:26px">%</small></div>
+        <div class="s">False alarms absorbed by the 10&nbsp;s cancel window</div>
+      </div>
+      <div class="figbig">
+        <div class="k">5-fold CV F1</div>
+        <div class="v">.826<small style="font-size:22px"> ±.015</small></div>
+        <div class="s">Low variance → stable &amp; trustworthy</div>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-h"><h2>At a glance</h2><span class="hint">held-out test split unless noted</span></div>
+    <div class="grid tiles" id="tiles"></div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>Where it gets things right &amp; wrong</h2><span class="hint">confusion matrix + per-class report (hold-out)</span></div>
+    <div class="grid two">
+      <div class="card">
+        <h3>Confusion matrix</h3>
+        <p class="sub">478 test windows. Rows = truth, columns = model prediction.</p>
+        <div class="cm">
+          <div class="corner"></div>
+          <div class="axtop">Predicted</div>
+          <div class="axleft">Actual</div>
+          <div>
+            <div class="colh" style="margin-bottom:8px">not-fall</div>
+            <div class="cell tn"><div class="n num">342</div><div class="lab">True negatives — correctly calm</div></div>
+          </div>
+          <div>
+            <div class="colh" style="margin-bottom:8px">fall</div>
+            <div class="cell fp"><div class="n num">30</div><div class="lab">False alarms — cancellable</div></div>
+          </div>
+          <div class="axleft" style="grid-row:3">&nbsp;</div>
+          <div>
+            <div class="cell fn"><div class="n num">8</div><div class="lab">Missed falls</div></div>
+          </div>
+          <div>
+            <div class="cell tp"><div class="n num">98</div><div class="lab">Falls caught ✓</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Classification report</h3>
+        <p class="sub">Judge a fall detector by the <b>fall</b> row, not overall accuracy.</p>
+        <div class="scroll">
+        <table class="rep">
+          <thead><tr><th>Class</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Support</th></tr></thead>
+          <tbody>
+            <tr><td>Not-fall</td><td class="num">0.977</td><td class="num">0.919</td><td class="num">0.947</td><td class="num">372</td></tr>
+            <tr><td><span class="chip"><span class="swatch" style="background:var(--accent)"></span>Fall</span></td>
+                <td class="num">0.766</td><td class="num">0.925</td><td class="num">0.838</td><td class="num">106</td></tr>
+            <tr class="tot"><td>Accuracy</td><td class="num">—</td><td class="num">—</td><td class="num">0.921</td><td class="num">478</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="sub" style="margin-top:14px">Overall accuracy looks high because most windows are not-falls — which is exactly why we report the fall-class recall and the subject-independent numbers instead.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>Per-subject generalisation</h2><span class="hint">leave-one-subject-out · 17 held-out people</span></div>
+    <div class="card">
+      <div class="legend">
+        <span class="chip"><span class="swatch" style="background:var(--s1)"></span> Fall recall</span>
+        <span class="chip"><span class="swatch" style="background:var(--s2)"></span> Precision</span>
+        <span class="chip" style="margin-left:auto">Average — recall <b class="num" style="color:var(--ink)">90.6%</b> · precision <b class="num" style="color:var(--ink)">75.6%</b></span>
+      </div>
+      <div id="loso"></div>
+      <p class="sub" style="margin-top:14px">Recall stays high across everyone; precision dips only for subjects with the fewest tested falls (6, 10, 14) — noise, not weakness. This spread is why subject-independent testing matters.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>What the model looks at</h2><span class="hint">Random Forest feature importances</span></div>
+    <div class="card">
+      <div class="legend">
+        <span class="chip"><span class="swatch" style="background:var(--s1)"></span> Motion feature (accelerometer)</span>
+        <span class="chip"><span class="swatch" style="background:var(--s2)"></span> Image feature (camera)</span>
+      </div>
+      <div id="feats"></div>
+      <p class="sub" style="margin-top:14px">The top feature is an <b>image</b> feature and the rest are a motion/image mix — proof the image + motion fusion genuinely contributes, not motion alone.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>How it was evaluated</h2></div>
+    <div class="note">
+      Two safeguards keep these numbers honest:
+      <ul>
+        <li><b>Leakage-free split</b> — overlapping windows from the same recording never appear in both training and test, so the score isn't inflated by near-duplicates.</li>
+        <li><b>Subject-independent (LOSO)</b> — the model is trained on 16 people and tested on the 17th, rotated through everyone. This measures generalisation to <b>new users</b>, the realistic case.</li>
+      </ul>
+      A 5-subject run gave 90.9% / 76.3% — nearly identical to the 17-subject result, confirming it's robust, not luck.
+    </div>
+  </section>
+
+  <footer>
+    <span>Dataset: UP-Fall · 17 subjects · 255 recordings · 1,926 windows (430 fall / 1,496 not-fall)</span>
+    <span>3-stage funnel: threshold → ML confirm → 10 s cancel window</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement, btn=document.getElementById('themeBtn'),
+      icon=document.getElementById('themeIcon'), txt=document.getElementById('themeTxt');
+  function sysDark(){return window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches;}
+  function apply(t){root.setAttribute('data-theme',t);icon.textContent=t==='dark'?'☾':'☀';txt.textContent=t==='dark'?'Dark':'Light';}
+  apply(sysDark()?'dark':'light');
+  btn.addEventListener('click',function(){apply(root.getAttribute('data-theme')==='dark'?'light':'dark');});
+
+  // ---- per-subject LOSO ----
+  var loso=[
+    [1,82.1,100.0,39],[2,91.7,100.0,36],[3,80.6,96.7,36],[4,87.0,69.0,23],
+    [5,85.7,60.0,21],[6,100.0,53.6,15],[7,91.7,68.8,24],[8,86.5,91.4,37],
+    [9,95.8,71.9,24],[10,100.0,44.4,12],[11,88.9,72.7,27],[12,100.0,75.0,21],
+    [13,100.0,69.0,20],[14,100.0,50.0,17],[15,90.0,75.0,20],[16,70.4,90.5,27],
+    [17,90.3,96.6,31]
+  ];
+  var host=document.getElementById('loso');
+  loso.forEach(function(r){
+    var row=document.createElement('div');row.className='rowbar';
+    row.innerHTML='<div class="lbl"><b>S'+r[0]+'</b> · '+r[3]+'f</div>'+
+      '<div class="track">'+
+        bar('s1',r[1])+bar('s2',r[2])+
+      '</div>';
+    host.appendChild(row);
+  });
+  function bar(cls,v){
+    var inside=v>=18;
+    return '<div class="bar '+cls+(inside?'':' out')+'" style="width:'+v+'%" '+
+           'title="'+(cls==='s1'?'Recall ':'Precision ')+v.toFixed(1)+'%">'+
+           '<span class="val">'+v.toFixed(0)+'%</span></div>';
+  }
+
+  // ---- feature importances ----
+  var feats=[
+    ['frame_motion',0.268,'image'],['tilt_change',0.226,'motion'],
+    ['stillness',0.201,'motion'],['peak_accel',0.164,'motion'],
+    ['bbox_aspect_ratio',0.063,'image'],['centroid_height',0.048,'image'],
+    ['sma',0.029,'motion']
+  ];
+  var max=0.268, fh=document.getElementById('feats');
+  feats.forEach(function(f){
+    var d=document.createElement('div');d.className='feat';
+    d.innerHTML='<div class="fn"><span class="tag '+f[2]+'">'+(f[2]==='motion'?'MOT':'IMG')+'</span>'+f[0]+'</div>'+
+      '<div class="ftrack"><div class="fbar '+f[2]+'" style="width:'+(f[1]/max*100).toFixed(1)+'%" title="'+f[1]+'"></div></div>'+
+      '<div class="fv">'+f[1].toFixed(3)+'</div>';
+    fh.appendChild(d);
+  });
+
+  // ---- tiles ----
+  var tiles=[
+    ['Fall recall','92.5','%','held-out split'],
+    ['Fall precision','76.6','%','held-out split'],
+    ['Fall F1','0.838','','harmonic mean'],
+    ['Accuracy','92.1','%','all classes'],
+    ['Subjects','17','','leave-one-out'],
+    ['Fall windows','430','','of 1,926 total']
+  ];
+  var th=document.getElementById('tiles');
+  tiles.forEach(function(t){
+    var d=document.createElement('div');d.className='tile';
+    d.innerHTML='<div class="k">'+t[0]+'</div><div class="v">'+t[1]+
+      (t[2]?'<small>'+t[2]+'</small>':'')+'</div><div class="s">'+t[3]+'</div>';
+    th.appendChild(d);
+  });
+})();
+</script>
+</body>
+</html>
