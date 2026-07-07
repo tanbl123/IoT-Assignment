@@ -22,11 +22,13 @@ data/*.csv
 !data/README.md
 !data/sample.csv
 
-# ---- Datasets (large / generated — never commit) ----
-# Raw UP-Fall / URFD downloads (can be many GB) and the generated training set.
+# ---- Datasets ----
+# Raw UP-Fall / URFD downloads are many GB — NEVER commit these.
 upfall_raw/
 urfd_raw/
-dataset.csv
+# NOTE: data/dataset.csv (the small generated 7-feature training file) IS
+# committed on purpose, so teammates can run train_model.py without the multi-GB
+# raw images. Add it with:  git add -f backend-python/data/dataset.csv
 
 # ---- Arduino / PlatformIO ----
 .pio/
