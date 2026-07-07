@@ -11,6 +11,9 @@ firebase_config.json
 # ---- Python ----
 .venv/
 venv/
+env/
+fall-detection-env/
+*-env/
 __pycache__/
 *.pyc
 *.pkl
