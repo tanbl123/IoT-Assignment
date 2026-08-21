@@ -55,13 +55,33 @@ def push_telemetry(hr, spo2, status):
         print(".", end="", flush=True)
 
 
+# def push_fall_event(hr, spo2, lat, lng):
+#     """Confirmed fall -> append to history and set an alert flag for the app."""
+#     event = {"hr": hr, "spo2": spo2, "lat": lat, "lng": lng,
+#              "ts": int(time.time()), "status": "FALL_CONFIRMED"}
+#     if _init():
+#         db.reference("falls").push(event)          # history log
+#         db.reference("alert").set(event)           # caregiver alert flag
+#     else:
+#         print("\n[firebase offline] FALL EVENT:", event)
+#     return event
 def push_fall_event(hr, spo2, lat, lng):
-    """Confirmed fall -> append to history and set an alert flag for the app."""
-    event = {"hr": hr, "spo2": spo2, "lat": lat, "lng": lng,
-             "ts": int(time.time()), "status": "FALL_CONFIRMED"}
+    """Confirmed fall -> append to history and set confirmed flag for actuator ESP32."""
+    event = {
+        "hr": hr,
+        "spo2": spo2,
+        "lat": lat,
+        "lng": lng,
+        "ts": int(time.time()),
+        "status": "FALL_CONFIRMED"
+    }
+
     if _init():
-        db.reference("falls").push(event)          # history log
-        db.reference("alert").set(event)           # caregiver alert flag
+        db.reference("falls").push(event)
+        db.reference("state/confirmed").set(True)
+        db.reference("state/alert").set(True)
+        db.reference("state/latestFall").set(event)
     else:
         print("\n[firebase offline] FALL EVENT:", event)
+
     return event
