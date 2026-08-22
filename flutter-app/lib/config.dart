@@ -11,6 +11,8 @@
 /// It must match FIREBASE_DB_URL used by backend-python/firebase_client.py.
 library;
 
-// TODO: replace with YOUR Realtime Database URL.
+// Realtime Database URL for the fall-detection-ed1a9 project.
+// NOTE: this project lives in the asia-southeast1 region, so the URL ends in
+// .asia-southeast1.firebasedatabase.app (NOT the default .firebaseio.com).
 const String kDatabaseUrl =
-    "https://YOUR-PROJECT-default-rtdb.firebaseio.com";
+    "https://fall-detection-ed1a9-default-rtdb.asia-southeast1.firebasedatabase.app";
