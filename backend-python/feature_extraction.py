@@ -37,8 +37,25 @@ FEATURE_NAMES = [
 
 
 def motion_features(accel_window: np.ndarray, tilt_window: np.ndarray) -> dict:
+    """
+    Extract motion features from ESP32 sensor readings.
+
+    accel_window:
+        Shape (N, 3), x/y/z acceleration values in g.
+
+    tilt_window:
+        Shape (N,), tilt angle values in degrees.
+    """
     accel_window = np.asarray(accel_window, dtype=float).reshape(-1, 3)
     tilt_window = np.asarray(tilt_window, dtype=float).ravel()
+
+    if len(accel_window) == 0 or len(tilt_window) == 0:
+        return {
+            "sma": 0.0,
+            "peak_accel": 0.0,
+            "tilt_change": 0.0,
+            "stillness": 0.0,
+        }
 
     mag = np.linalg.norm(accel_window, axis=1)
 
@@ -58,6 +75,19 @@ def motion_features(accel_window: np.ndarray, tilt_window: np.ndarray) -> dict:
 
 
 def image_features(frames: list, save_debug_path: str | None = None) -> dict:
+    """
+    Extract image features from ESP32-CAM frames.
+
+    Image preprocessing steps:
+    1. Convert frames to grayscale.
+    2. Apply Gaussian blur to reduce noise.
+    3. Use frame differencing to detect movement.
+    4. Apply thresholding.
+    5. Use morphology to clean noise.
+    6. Find the largest motion contour.
+    7. Calculate bounding-box aspect ratio, centroid height, and frame motion.
+    8. Save processed_detection.jpg if save_debug_path is provided.
+    """
     default = {
         "bbox_aspect_ratio": 0.0,
         "centroid_height": 0.0,
@@ -92,11 +122,26 @@ def image_features(frames: list, save_debug_path: str | None = None) -> dict:
     for d in diffs:
         combined_diff = cv2.max(combined_diff, d)
 
-    _, thresh = cv2.threshold(combined_diff, 25, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(
+        combined_diff,
+        25,
+        255,
+        cv2.THRESH_BINARY,
+    )
 
     kernel = np.ones((5, 5), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_DILATE, kernel)
+
+    thresh = cv2.morphologyEx(
+        thresh,
+        cv2.MORPH_OPEN,
+        kernel,
+    )
+
+    thresh = cv2.morphologyEx(
+        thresh,
+        cv2.MORPH_DILATE,
+        kernel,
+    )
 
     contours, _ = cv2.findContours(
         thresh,
@@ -117,6 +162,7 @@ def image_features(frames: list, save_debug_path: str | None = None) -> dict:
                 (0, 0, 255),
                 2,
             )
+
             cv2.imwrite(save_debug_path, annotated)
 
         return {
@@ -141,6 +187,7 @@ def image_features(frames: list, save_debug_path: str | None = None) -> dict:
                 (0, 0, 255),
                 2,
             )
+
             cv2.imwrite(save_debug_path, annotated)
 
         return {
@@ -149,6 +196,7 @@ def image_features(frames: list, save_debug_path: str | None = None) -> dict:
         }
 
     x, y, w, h = cv2.boundingRect(c)
+
     H = grays[-1].shape[0]
 
     aspect = float(w / h) if h else 0.0
@@ -196,8 +244,15 @@ def extract_all_features(
     frames=None,
     save_debug_path=None,
 ) -> dict:
+    """
+    Extract and combine motion + image features.
+    """
     m = motion_features(accel_window, tilt_window)
-    im = image_features(frames or [], save_debug_path=save_debug_path)
+
+    im = image_features(
+        frames or [],
+        save_debug_path=save_debug_path,
+    )
 
     return {
         **m,
@@ -211,6 +266,9 @@ def build_feature_vector(
     frames=None,
     save_debug_path=None,
 ) -> np.ndarray:
+    """
+    Build feature vector in the exact FEATURE_NAMES order.
+    """
     combined = extract_all_features(
         accel_window,
         tilt_window,

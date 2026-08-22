@@ -4,12 +4,20 @@ REAL IoT live fall-confirmation loop.
 Flow:
 1. Read real JSON lines from ESP32 sensor node through serial.
 2. Buffer real motion data.
-3. When fall_suspected is received, capture real frames from ESP32-CAM.
-4. Save raw frames and processed_detection.jpg.
-5. Extract motion + image features.
-6. Run Random Forest model.
-7. If confirmed, update Firebase /state/confirmed = true.
-8. Actuator ESP32 reads Firebase and triggers buzzer/OLED/vibration.
+3. Read HR and SpO2 from sensor JSON.
+4. When fall_suspected is received, capture frames from ESP32-CAM.
+5. Save raw frames and processed_detection.jpg.
+6. Extract motion + image features.
+7. Check camera posture: lying down / not lying / unclear.
+8. Run Random Forest model.
+9. Final decision:
+   - ML says fall
+   - camera says lying
+   - impact is strong enough
+   = FALL CONFIRMED
+10. Save live IoT prediction result to CSV.
+11. If confirmed, update Firebase /state/confirmed = true.
+12. Actuator ESP32 reads Firebase and triggers buzzer/OLED/vibration.
 """
 
 from __future__ import annotations
@@ -17,6 +25,8 @@ from __future__ import annotations
 import json
 import time
 import os
+import csv
+from datetime import datetime
 from collections import deque
 
 import numpy as np
@@ -28,29 +38,29 @@ import firebase_client
 
 # ===================== CONFIG =====================
 
-# Change this if your sensor ESP32 is not COM7.
 SERIAL_PORT = "COM7"
 BAUD = 115200
 
-# Must be plain URL only.
-# No [ ], no markdown, no parentheses.
+# Plain URL only. No [ ], no markdown, no parentheses.
 CAM_URL = "http://10.214.169.191/capture"
 
 MODEL_PATH = "fall_rf.joblib"
 
 WINDOW = 40
 
-# Prototype threshold.
-# Lower = easier to confirm fall.
-# Higher = stricter.
-FALL_THRESHOLD = 0.25
+# Stricter threshold to reduce false alarms.
+FALL_THRESHOLD = 0.45
+
+# Extra rule to reject normal lying down / small movement.
+MIN_PEAK_ACCEL_FOR_FALL = 1.40
 
 CAM_FRAME_COUNT = 8
 EVIDENCE_DIR = "captures"
+LIVE_RESULT_CSV = "live_iot_results.csv"
 
-# Since you want real ESP32-CAM result, keep this True.
-# If camera captures 0 frames, prediction will stop instead of motion-only.
 CAMERA_REQUIRED = True
+REQUIRE_CAMERA_LYING_CONFIRMATION = True
+REQUIRE_IMPACT_CONFIRMATION = True
 
 # ==================================================
 
@@ -70,9 +80,6 @@ except ImportError:
 
 
 def show_available_ports():
-    """
-    Print available COM ports to help you choose the correct sensor ESP32 port.
-    """
     if serial is None:
         return
 
@@ -89,9 +96,6 @@ def show_available_ports():
 
 
 def validate_config():
-    """
-    Stop early if the important config is wrong.
-    """
     if "[" in CAM_URL or "]" in CAM_URL or "(" in CAM_URL or ")" in CAM_URL:
         raise SystemExit(
             "[error] CAM_URL is wrong.\n"
@@ -108,9 +112,6 @@ def validate_config():
 
 
 def load_model():
-    """
-    Load trained Random Forest model.
-    """
     bundle = joblib.load(MODEL_PATH)
 
     assert bundle["features"] == FEATURE_NAMES, (
@@ -124,10 +125,6 @@ def load_model():
 
 
 def open_serial():
-    """
-    Open real sensor ESP32 serial port.
-    No demo fallback.
-    """
     if serial is None:
         raise SystemExit(
             "[error] pyserial not installed.\n"
@@ -155,9 +152,6 @@ def open_serial():
 
 
 def test_camera_once():
-    """
-    Test ESP32-CAM before starting real inference.
-    """
     if cv2 is None or requests is None:
         raise SystemExit(
             "[error] opencv-python or requests not installed.\n"
@@ -186,6 +180,7 @@ def test_camera_once():
             )
 
         os.makedirs(EVIDENCE_DIR, exist_ok=True)
+
         test_path = os.path.join(EVIDENCE_DIR, "startup_camera_test.jpg")
         cv2.imwrite(test_path, img)
 
@@ -196,16 +191,13 @@ def test_camera_once():
             f"[error] camera test failed: {e}\n\n"
             "Fix:\n"
             "1. Make sure ESP32-CAM is powered on.\n"
-            "2. Make sure laptop and ESP32-CAM are on same WiFi.\n"
+            "2. Make sure laptop and ESP32-CAM are on the same WiFi.\n"
             "3. Open CAM_URL in browser.\n"
             "4. Update CAM_URL if IP changed."
         )
 
 
 def grab_camera_frames(n=CAM_FRAME_COUNT):
-    """
-    Pull JPEG frames from ESP32-CAM.
-    """
     frames = []
 
     for i in range(n):
@@ -234,17 +226,13 @@ def grab_camera_frames(n=CAM_FRAME_COUNT):
 
 
 def save_fall_frames(frames):
-    """
-    Save captured fall frames into:
-    captures/fall_event_xxxxx/
-    """
     if not frames:
         print("[camera] no image captured")
         return None
 
     event_dir = os.path.join(
         EVIDENCE_DIR,
-        f"fall_event_{int(time.time())}"
+        f"fall_event_{int(time.time())}",
     )
 
     os.makedirs(event_dir, exist_ok=True)
@@ -259,10 +247,6 @@ def save_fall_frames(frames):
 
 
 def serial_packets(ser):
-    """
-    Yield JSON packets read from ESP32 sensor node.
-    Non-JSON Arduino logs are ignored.
-    """
     while True:
         raw = ser.readline().decode(errors="ignore").strip()
 
@@ -271,17 +255,129 @@ def serial_packets(ser):
 
         try:
             yield json.loads(raw)
-
         except json.JSONDecodeError:
             continue
 
 
+def safe_int(value, default=-1):
+    try:
+        if value is None:
+            return default
+
+        return int(float(value))
+
+    except (ValueError, TypeError):
+        return default
+
+
+def classify_vitals(hr, spo2):
+    """
+    HR = -1 means unknown.
+    SpO2 = -1 means unknown.
+    """
+    hr_status = "UNKNOWN" if hr == -1 else "DETECTED"
+    spo2_status = "UNKNOWN" if spo2 == -1 else "DETECTED"
+
+    hr_display = "Unknown" if hr == -1 else str(hr)
+    spo2_display = "Unknown" if spo2 == -1 else str(spo2)
+
+    return hr_status, spo2_status, hr_display, spo2_display
+
+
+def classify_camera_posture(feature_report):
+    """
+    Simple camera posture check based on extracted image features.
+
+    This does not know whether the person is awake, using phone, or conscious.
+    It only checks whether the detected shape looks like lying posture.
+    """
+    aspect = feature_report.get("bbox_aspect_ratio", 0)
+    centroid = feature_report.get("centroid_height", 0)
+    motion = feature_report.get("frame_motion", 0)
+
+    if aspect == 0 and centroid == 0:
+        return "NO CLEAR PERSON / MOTION DETECTED", False
+
+    if aspect >= 1.25 and centroid >= 0.45:
+        return "LYING DOWN DETECTED", True
+
+    if aspect >= 1.50:
+        return "POSSIBLE LYING DOWN", True
+
+    if motion > 0 and centroid >= 0.45:
+        return "LOW POSTURE / UNCLEAR", False
+
+    return "NOT LYING / UNCLEAR POSTURE", False
+
+
+def save_live_iot_result(
+    event_dir,
+    processed_image_path,
+    feature_report,
+    camera_posture,
+    ml_says_fall,
+    camera_says_lying,
+    impact_says_fall,
+    fall_probability,
+    predicted_result,
+    firebase_updated,
+    hr,
+    hr_status,
+    spo2,
+    spo2_status,
+):
+    file_exists = os.path.exists(LIVE_RESULT_CSV)
+
+    row = {
+        "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+
+        "hr": hr,
+        "hr_status": hr_status,
+        "spo2": spo2,
+        "spo2_status": spo2_status,
+
+        "event_folder": event_dir if event_dir else "",
+        "processed_image": processed_image_path if processed_image_path else "",
+
+        "sma": feature_report.get("sma", 0),
+        "peak_accel": feature_report.get("peak_accel", 0),
+        "tilt_change": feature_report.get("tilt_change", 0),
+        "stillness": feature_report.get("stillness", 0),
+        "bbox_aspect_ratio": feature_report.get("bbox_aspect_ratio", 0),
+        "centroid_height": feature_report.get("centroid_height", 0),
+        "frame_motion": feature_report.get("frame_motion", 0),
+
+        "camera_posture": camera_posture,
+        "ml_says_fall": ml_says_fall,
+        "camera_says_lying": camera_says_lying,
+        "impact_says_fall": impact_says_fall,
+
+        "fall_probability": round(float(fall_probability), 3),
+        "predicted_result": predicted_result,
+        "firebase_updated": firebase_updated,
+    }
+
+    with open(LIVE_RESULT_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=row.keys())
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(row)
+
+    print(f"[log] live IoT result saved to: {LIVE_RESULT_CSV}")
+
+
 def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
-    """
-    Handle one real sensor packet.
-    """
     g = float(pkt.get("accel_g", 1.0))
     tilt = float(pkt.get("tilt", 0.0))
+
+    hr = safe_int(pkt.get("hr", -1), default=-1)
+    spo2 = safe_int(pkt.get("spo2", -1), default=-1)
+
+    hr_status, spo2_status, hr_display, spo2_display = classify_vitals(hr, spo2)
+
+    print(f"[vitals] HR={hr_display} | SpO2={spo2_display}")
 
     # Your sensor sends acceleration magnitude.
     # Random Forest expects x, y, z window, so distribute magnitude equally.
@@ -289,13 +385,15 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     tilt_buf.append(tilt)
 
     last_vitals.update({
-        k: pkt.get(k, last_vitals[k])
-        for k in last_vitals
+        "hr": hr,
+        "spo2": spo2,
+        "lat": pkt.get("lat", last_vitals["lat"]),
+        "lng": pkt.get("lng", last_vitals["lng"]),
     })
 
     firebase_client.push_telemetry(
-        pkt.get("hr", -1),
-        pkt.get("spo2", -1),
+        hr,
+        spo2,
         "OK",
     )
 
@@ -309,6 +407,7 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     print("\n================ FALL SUSPECTED ================")
     print("[stage-2] real fall_suspected received from ESP32 sensor")
     print(f"[stage-2] accel_g={g:.2f}, tilt={tilt:.1f}")
+    print(f"[vitals] HR={hr_display} ({hr_status}) | SpO2={spo2_display} ({spo2_status})")
 
     frames = grab_camera_frames(n=CAM_FRAME_COUNT)
 
@@ -327,7 +426,7 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     if event_dir:
         debug_image_path = os.path.join(
             event_dir,
-            "processed_detection.jpg"
+            "processed_detection.jpg",
         )
 
     fv = build_feature_vector(
@@ -347,22 +446,76 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
 
     print("[features]", feature_report)
 
+    camera_posture, camera_says_lying = classify_camera_posture(feature_report)
+    print(f"[camera posture] {camera_posture}")
+
     prob = model.predict_proba(fv.reshape(1, -1))[0][1]
-    confirmed = prob >= FALL_THRESHOLD
+    ml_says_fall = prob >= FALL_THRESHOLD
+
+    peak_accel = feature_report.get("peak_accel", 0)
+    impact_says_fall = peak_accel >= MIN_PEAK_ACCEL_FOR_FALL
+
+    confirmed = ml_says_fall
+
+    if REQUIRE_CAMERA_LYING_CONFIRMATION:
+        confirmed = confirmed and camera_says_lying
+
+    if REQUIRE_IMPACT_CONFIRMATION:
+        confirmed = confirmed and impact_says_fall
 
     print(f"[ml] fall_probability = {prob:.2f}")
     print(f"[ml] threshold = {FALL_THRESHOLD:.2f}")
+    print(f"[ml decision] ML says fall: {ml_says_fall}")
+
+    print(f"[camera decision] Camera says lying: {camera_says_lying}")
+    print(f"[impact] peak_accel = {peak_accel:.2f}, required >= {MIN_PEAK_ACCEL_FOR_FALL:.2f}")
+    print(f"[impact decision] Impact says fall: {impact_says_fall}")
+
+    print(f"[final rule] require camera lying: {REQUIRE_CAMERA_LYING_CONFIRMATION}")
+    print(f"[final rule] require impact: {REQUIRE_IMPACT_CONFIRMATION}")
 
     if confirmed:
         print("[result] FALL CONFIRMED — updating Firebase")
+
         firebase_client.push_fall_event(
-            last_vitals["hr"],
-            last_vitals["spo2"],
+            hr,
+            spo2,
             last_vitals["lat"],
             last_vitals["lng"],
         )
+
+        predicted_result = "FALL CONFIRMED"
+        firebase_updated = "Yes"
+
     else:
-        print("[result] dismissed — not a fall")
+        if not impact_says_fall and camera_says_lying:
+            print("[result] NOT FALL — lying posture detected, but impact is not strong enough")
+        elif ml_says_fall and not camera_says_lying:
+            print("[result] NOT FALL — sensor/ML triggered, but camera did not detect lying posture")
+        elif not ml_says_fall and camera_says_lying:
+            print("[result] NOT FALL — camera detected lying posture, but ML probability is too low")
+        else:
+            print("[result] NOT FALL — dismissed")
+
+        predicted_result = "NOT FALL"
+        firebase_updated = "No"
+
+    save_live_iot_result(
+        event_dir=event_dir,
+        processed_image_path=debug_image_path,
+        feature_report=feature_report,
+        camera_posture=camera_posture,
+        ml_says_fall=ml_says_fall,
+        camera_says_lying=camera_says_lying,
+        impact_says_fall=impact_says_fall,
+        fall_probability=prob,
+        predicted_result=predicted_result,
+        firebase_updated=firebase_updated,
+        hr=hr,
+        hr_status=hr_status,
+        spo2=spo2,
+        spo2_status=spo2_status,
+    )
 
     print("================================================\n")
 
@@ -394,7 +547,10 @@ def main():
     }
 
     print("\n[system] waiting for real ESP32 sensor packets...")
-    print("[system] safe test: person lies down in ESP32-CAM view, then shake/rotate sensor board.\n")
+    print("[system] Test 1: person lies down safely, then shake/rotate sensor board.")
+    print("[system] Test 2: person stands/sits normally, then shake/rotate sensor board.")
+    print("[system] Fall confirmed only when ML, camera posture, and impact all support fall.")
+    print("[system] HR or SpO2 = -1 means Unknown.\n")
 
     for pkt in serial_packets(ser):
         print("RX:", pkt)
