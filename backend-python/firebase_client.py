@@ -25,8 +25,16 @@ except ImportError:
 CRED_PATH = os.getenv("FIREBASE_CRED", "serviceAccountKey.json")   # TODO
 DB_URL    = os.getenv("FIREBASE_DB_URL", "")                       # TODO: your RTDB URL
 
+# How often (seconds) to append a vitals snapshot to history/vitals.
+# telemetry/latest is overwritten on every packet, so it only ever holds the
+# newest reading — no time-series. To let the Flutter app draw analytics
+# graphs (HR/SpO2 over time) we ALSO append a snapshot to history/vitals, but
+# throttled so a ~20 Hz sensor stream doesn't flood the database.
+HISTORY_INTERVAL_SEC = int(os.getenv("FIREBASE_HISTORY_INTERVAL", "10"))
+
 _initialized = False
 _warned = False
+_last_history_ts = 0.0
 
 
 def _init():
@@ -46,10 +54,21 @@ def _init():
 
 
 def push_telemetry(hr, spo2, status):
-    """Routine vitals for the app's live charts."""
-    payload = {"hr": hr, "spo2": spo2, "status": status, "ts": int(time.time())}
+    """Routine vitals for the app's live charts + throttled history for analytics.
+
+    * telemetry/latest  -> overwritten each call (the app's live tile).
+    * history/vitals/<pushId> -> an append-only time-series the Flutter app
+      reads to draw HR/SpO2 charts and daily reports. Appended at most once
+      every HISTORY_INTERVAL_SEC so the database doesn't fill with ~20 rows/sec.
+    """
+    global _last_history_ts
+    now = time.time()
+    payload = {"hr": hr, "spo2": spo2, "status": status, "ts": int(now)}
     if _init():
         db.reference("telemetry/latest").set(payload)
+        if now - _last_history_ts >= HISTORY_INTERVAL_SEC:
+            db.reference("history/vitals").push(payload)   # time-series log
+            _last_history_ts = now
     else:
         # offline: a compact heartbeat so the demo isn't flooded with lines
         print(".", end="", flush=True)
