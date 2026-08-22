@@ -193,11 +193,23 @@ def main():
 
     print(f"Building dataset from {len(csvs)} trial(s) in {RAW_DIR}/ ...")
     rows, labels, groups = [], [], []
+    skipped = 0
     for csv_path in csvs:
-        for fv, label, group in process_trial(csv_path):
+        try:
+            trial_rows = list(process_trial(csv_path))   # force the whole trial
+        except Exception as e:
+            # e.g. an empty/corrupt CSV left by a failed download — skip it,
+            # don't crash the whole build.
+            skipped += 1
+            print(f"  [skip] {os.path.basename(csv_path)}: {type(e).__name__} — {e}")
+            continue
+        for fv, label, group in trial_rows:
             rows.append(fv)
             labels.append(label)
             groups.append(group)
+
+    if skipped:
+        print(f"[note] skipped {skipped} unreadable/empty file(s) (e.g. gaps in the dataset).")
 
     if not rows:
         print("No windows produced — check the files.")
