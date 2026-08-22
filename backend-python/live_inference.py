@@ -5,19 +5,21 @@ Flow:
 1. Read real JSON lines from ESP32 sensor node through serial.
 2. Buffer real motion data.
 3. Read HR and SpO2 from sensor JSON.
-4. When fall_suspected is received, capture frames from ESP32-CAM.
-5. Save raw frames and processed_detection.jpg.
-6. Extract motion + image features.
-7. Check camera posture: lying down / not lying / unclear.
-8. Run Random Forest model.
-9. Final decision:
-   - ML says fall
-   - camera says lying
-   - impact is strong enough
-   = FALL CONFIRMED
-10. Save live IoT prediction result to CSV.
-11. If confirmed, update Firebase /state/confirmed = true.
-12. Actuator ESP32 reads Firebase and triggers buzzer/OLED/vibration.
+4. Save normal telemetry into Firebase all_records.
+5. When fall_suspected is received, capture frames from ESP32-CAM.
+6. Save raw frames and processed_detection.jpg.
+7. Extract motion + image features.
+8. Check camera posture: lying down / not lying / unclear.
+9. Run Random Forest model.
+10. Final decision:
+    - ML says fall
+    - camera says lying
+    - impact is strong enough
+    = FALL CONFIRMED
+11. Save live IoT prediction result to CSV and Excel.
+12. Save every detection result into Firebase all_records.
+13. If confirmed, save into Firebase fall_events and update state/confirmed = true.
+14. Actuator ESP32 reads Firebase and triggers buzzer/OLED/vibration.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import csv
 from datetime import datetime
 from collections import deque
 
+import pandas as pd
 import numpy as np
 import joblib
 
@@ -48,15 +51,14 @@ MODEL_PATH = "fall_rf.joblib"
 
 WINDOW = 40
 
-# Stricter threshold to reduce false alarms.
 FALL_THRESHOLD = 0.45
-
-# Extra rule to reject normal lying down / small movement.
 MIN_PEAK_ACCEL_FOR_FALL = 1.40
 
 CAM_FRAME_COUNT = 8
 EVIDENCE_DIR = "captures"
+
 LIVE_RESULT_CSV = "live_iot_results.csv"
+LIVE_RESULT_XLSX = "live_iot_results.xlsx"
 
 CAMERA_REQUIRED = True
 REQUIRE_CAMERA_LYING_CONFIRMATION = True
@@ -107,7 +109,7 @@ def validate_config():
         raise SystemExit(
             f"[error] {MODEL_PATH} not found.\n"
             "Run this first:\n"
-            "python train_model.py"
+            "python export_rf_excel.py"
         )
 
 
@@ -115,7 +117,7 @@ def load_model():
     bundle = joblib.load(MODEL_PATH)
 
     assert bundle["features"] == FEATURE_NAMES, (
-        "feature order mismatch — retrain the model using python train_model.py"
+        "feature order mismatch — retrain the model using python export_rf_excel.py"
     )
 
     print("[ml] model loaded successfully")
@@ -271,10 +273,6 @@ def safe_int(value, default=-1):
 
 
 def classify_vitals(hr, spo2):
-    """
-    HR = -1 means unknown.
-    SpO2 = -1 means unknown.
-    """
     hr_status = "UNKNOWN" if hr == -1 else "DETECTED"
     spo2_status = "UNKNOWN" if spo2 == -1 else "DETECTED"
 
@@ -285,12 +283,6 @@ def classify_vitals(hr, spo2):
 
 
 def classify_camera_posture(feature_report):
-    """
-    Simple camera posture check based on extracted image features.
-
-    This does not know whether the person is awake, using phone, or conscious.
-    It only checks whether the detected shape looks like lying posture.
-    """
     aspect = feature_report.get("bbox_aspect_ratio", 0)
     centroid = feature_report.get("centroid_height", 0)
     motion = feature_report.get("frame_motion", 0)
@@ -365,7 +357,18 @@ def save_live_iot_result(
 
         writer.writerow(row)
 
-    print(f"[log] live IoT result saved to: {LIVE_RESULT_CSV}")
+    print(f"[log] live IoT result saved to CSV: {LIVE_RESULT_CSV}")
+
+    try:
+        df = pd.read_csv(LIVE_RESULT_CSV)
+
+        with pd.ExcelWriter(LIVE_RESULT_XLSX, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="Live IoT Results", index=False)
+
+        print(f"[log] live IoT result also saved to Excel: {LIVE_RESULT_XLSX}")
+
+    except Exception as e:
+        print(f"[log warning] CSV saved, but Excel export failed: {e}")
 
 
 def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
@@ -379,8 +382,6 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
 
     print(f"[vitals] HR={hr_display} | SpO2={spo2_display}")
 
-    # Your sensor sends acceleration magnitude.
-    # Random Forest expects x, y, z window, so distribute magnitude equally.
     accel_buf.append([g / np.sqrt(3)] * 3)
     tilt_buf.append(tilt)
 
@@ -392,9 +393,13 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     })
 
     firebase_client.push_telemetry(
-        hr,
-        spo2,
-        "OK",
+        hr=hr,
+        spo2=spo2,
+        status="NORMAL",
+        accel_g=g,
+        tilt=tilt,
+        lat=last_vitals["lat"],
+        lng=last_vitals["lng"],
     )
 
     if pkt.get("type") != "fall_suspected":
@@ -515,6 +520,22 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
         hr_status=hr_status,
         spo2=spo2,
         spo2_status=spo2_status,
+    )
+
+    firebase_client.push_all_record(
+        hr=hr,
+        spo2=spo2,
+        lat=last_vitals["lat"],
+        lng=last_vitals["lng"],
+        predicted_result=predicted_result,
+        fall_probability=prob,
+        camera_posture=camera_posture,
+        ml_says_fall=ml_says_fall,
+        camera_says_lying=camera_says_lying,
+        impact_says_fall=impact_says_fall,
+        feature_report=feature_report,
+        event_folder=event_dir if event_dir else "",
+        processed_image=debug_image_path if debug_image_path else "",
     )
 
     print("================================================\n")
