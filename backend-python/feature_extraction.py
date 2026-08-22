@@ -1,92 +1,224 @@
 """
 Feature extraction for the fall-detection Random Forest.
 
-Two feature groups, matching the project spec:
-  MOTION (from the ESP32 sensor node window around the impact):
-      - signal magnitude area (SMA)
-      - peak acceleration
-      - tilt change
-      - post-impact stillness
-  IMAGE (from the ESP32-CAM frames):
-      - bounding-box aspect ratio (a fallen person is wide, not tall)
-      - centroid height (fallen person's centroid sits low in the frame)
-      - frame motion (sudden motion then stillness)
+Motion features:
+- signal magnitude area
+- peak acceleration
+- tilt change
+- post-impact stillness
 
-Both groups are concatenated into a single feature vector. Keep the ORDER in
-FEATURE_NAMES identical between training and live inference.
+Image features from ESP32-CAM:
+- bounding-box aspect ratio
+- centroid height
+- frame motion
+
+Keep FEATURE_NAMES order identical between training and live inference.
 """
 
 from __future__ import annotations
+
 import numpy as np
 
 try:
     import cv2
-except ImportError:      # image features optional if you start motion-only
+except ImportError:
     cv2 = None
 
+
 FEATURE_NAMES = [
-    "sma", "peak_accel", "tilt_change", "stillness",       # motion
-    "bbox_aspect_ratio", "centroid_height", "frame_motion" # image
+    "sma",
+    "peak_accel",
+    "tilt_change",
+    "stillness",
+    "bbox_aspect_ratio",
+    "centroid_height",
+    "frame_motion",
 ]
 
 
-# ------------------------- MOTION FEATURES -------------------------
 def motion_features(accel_window: np.ndarray, tilt_window: np.ndarray) -> dict:
-    """
-    accel_window: shape (N, 3) of x,y,z acceleration in g over a short window.
-    tilt_window:  shape (N,)   of tilt angle (deg) over the same window.
-    """
     accel_window = np.asarray(accel_window, dtype=float).reshape(-1, 3)
     tilt_window = np.asarray(tilt_window, dtype=float).ravel()
 
-    mag = np.linalg.norm(accel_window, axis=1)                 # per-sample magnitude
+    mag = np.linalg.norm(accel_window, axis=1)
+
     sma = float(np.sum(np.abs(accel_window)) / len(accel_window))
     peak_accel = float(np.max(mag))
     tilt_change = float(np.max(tilt_window) - np.min(tilt_window))
 
-    # post-impact stillness: variance of the last third of the window
     tail = mag[len(mag) * 2 // 3:]
-    stillness = float(1.0 / (1.0 + np.var(tail)))              # high = very still
+    stillness = float(1.0 / (1.0 + np.var(tail)))
 
-    return {"sma": sma, "peak_accel": peak_accel,
-            "tilt_change": tilt_change, "stillness": stillness}
+    return {
+        "sma": sma,
+        "peak_accel": peak_accel,
+        "tilt_change": tilt_change,
+        "stillness": stillness,
+    }
 
 
-# ------------------------- IMAGE FEATURES --------------------------
-def image_features(frames: list) -> dict:
-    """
-    frames: list of BGR images (np.ndarray) captured around the suspected fall.
-    Returns zeros if OpenCV is unavailable or no person is segmented, so the
-    pipeline still runs motion-only.
-    """
-    default = {"bbox_aspect_ratio": 0.0, "centroid_height": 0.0, "frame_motion": 0.0}
+def image_features(frames: list, save_debug_path: str | None = None) -> dict:
+    default = {
+        "bbox_aspect_ratio": 0.0,
+        "centroid_height": 0.0,
+        "frame_motion": 0.0,
+    }
+
     if cv2 is None or not frames:
         return default
 
-    # --- crude foreground person estimate via frame differencing ---
-    grays = [cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) for f in frames]
-    diffs = [cv2.absdiff(grays[i], grays[i - 1]) for i in range(1, len(grays))]
+    grays = []
+
+    for frame in frames:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        grays.append(gray)
+
+    diffs = [
+        cv2.absdiff(grays[i], grays[i - 1])
+        for i in range(1, len(grays))
+    ]
+
     frame_motion = float(np.mean([d.mean() for d in diffs])) if diffs else 0.0
 
-    # bounding box of the largest motion blob in the last diff
-    if diffs:
-        _, thresh = cv2.threshold(diffs[-1], 25, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            c = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(c)
-            H = grays[-1].shape[0]
-            aspect = float(w / h) if h else 0.0            # >1 = wider than tall = fallen
-            centroid_y = float((y + h / 2) / H)            # 1.0 = bottom of frame
-            return {"bbox_aspect_ratio": aspect,
-                    "centroid_height": centroid_y,
-                    "frame_motion": frame_motion}
-    return {**default, "frame_motion": frame_motion}
+    if not diffs:
+        return {
+            **default,
+            "frame_motion": frame_motion,
+        }
+
+    combined_diff = diffs[-1]
+
+    for d in diffs:
+        combined_diff = cv2.max(combined_diff, d)
+
+    _, thresh = cv2.threshold(combined_diff, 25, 255, cv2.THRESH_BINARY)
+
+    kernel = np.ones((5, 5), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_DILATE, kernel)
+
+    contours, _ = cv2.findContours(
+        thresh,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
+    )
+
+    annotated = frames[-1].copy()
+
+    if not contours:
+        if save_debug_path:
+            cv2.putText(
+                annotated,
+                "No strong motion blob detected",
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+            )
+            cv2.imwrite(save_debug_path, annotated)
+
+        return {
+            **default,
+            "frame_motion": frame_motion,
+        }
+
+    c = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(c)
+
+    image_area = grays[-1].shape[0] * grays[-1].shape[1]
+    min_area = max(100, image_area * 0.002)
+
+    if area < min_area:
+        if save_debug_path:
+            cv2.putText(
+                annotated,
+                "Motion too small / noise",
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+            )
+            cv2.imwrite(save_debug_path, annotated)
+
+        return {
+            **default,
+            "frame_motion": frame_motion,
+        }
+
+    x, y, w, h = cv2.boundingRect(c)
+    H = grays[-1].shape[0]
+
+    aspect = float(w / h) if h else 0.0
+    centroid_y = float((y + h / 2) / H)
+
+    if save_debug_path:
+        cv2.rectangle(
+            annotated,
+            (x, y),
+            (x + w, y + h),
+            (0, 255, 0),
+            2,
+        )
+
+        cv2.circle(
+            annotated,
+            (x + w // 2, y + h // 2),
+            5,
+            (0, 0, 255),
+            -1,
+        )
+
+        cv2.putText(
+            annotated,
+            f"aspect={aspect:.2f}, centroid={centroid_y:.2f}, motion={frame_motion:.2f}",
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            2,
+        )
+
+        cv2.imwrite(save_debug_path, annotated)
+
+    return {
+        "bbox_aspect_ratio": aspect,
+        "centroid_height": centroid_y,
+        "frame_motion": frame_motion,
+    }
 
 
-def build_feature_vector(accel_window, tilt_window, frames=None) -> np.ndarray:
-    """Concatenate motion + image features in FEATURE_NAMES order."""
+def extract_all_features(
+    accel_window,
+    tilt_window,
+    frames=None,
+    save_debug_path=None,
+) -> dict:
     m = motion_features(accel_window, tilt_window)
-    im = image_features(frames or [])
-    combined = {**m, **im}
-    return np.array([combined[name] for name in FEATURE_NAMES], dtype=float)
+    im = image_features(frames or [], save_debug_path=save_debug_path)
+
+    return {
+        **m,
+        **im,
+    }
+
+
+def build_feature_vector(
+    accel_window,
+    tilt_window,
+    frames=None,
+    save_debug_path=None,
+) -> np.ndarray:
+    combined = extract_all_features(
+        accel_window,
+        tilt_window,
+        frames or [],
+        save_debug_path=save_debug_path,
+    )
+
+    return np.array(
+        [combined[name] for name in FEATURE_NAMES],
+        dtype=float,
+    )

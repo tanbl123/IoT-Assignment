@@ -66,7 +66,6 @@ def push_telemetry(hr, spo2, status):
 #         print("\n[firebase offline] FALL EVENT:", event)
 #     return event
 def push_fall_event(hr, spo2, lat, lng):
-    """Confirmed fall -> append to history and set confirmed flag for actuator ESP32."""
     event = {
         "hr": hr,
         "spo2": spo2,
@@ -81,6 +80,7 @@ def push_fall_event(hr, spo2, lat, lng):
         db.reference("state/confirmed").set(True)
         db.reference("state/alert").set(True)
         db.reference("state/latestFall").set(event)
+        print("[firebase] /state/confirmed set to true")
     else:
         print("\n[firebase offline] FALL EVENT:", event)
 
