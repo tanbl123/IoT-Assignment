@@ -6,12 +6,14 @@ import "../models/vitals.dart";
 import "../models/fall_event.dart";
 
 /// Thin wrapper over the Realtime Database. All screens read through here so the
-/// Firebase paths live in exactly one place and stay in sync with the backend:
+/// Firebase paths live in exactly one place and stay in sync with the backend
+/// (see backend-python/firebase_client.py):
 ///
-///   telemetry/latest        -> live tile          (overwritten each reading)
-///   history/vitals/<pushId> -> HR/SpO2 charts     (append-only time-series)
-///   falls/<pushId>          -> fall history + report counts
-///   state/alert             -> red "FALL!" banner
+///   telemetry/latest         -> live tile        (overwritten each reading)
+///   all_records/<pushId>     -> HR/SpO2 charts    (append-only history of every
+///                               reading; record_type marks normal vs fall)
+///   fall_events/<pushId>     -> confirmed-fall history + report counts
+///   state/alert              -> red "FALL!" banner
 class DatabaseService {
   DatabaseService() : _db = FirebaseDatabase.instanceFor(
           app: Firebase.app(),
@@ -30,9 +32,11 @@ class DatabaseService {
   }
 
   /// Time-series of vitals for the analytics charts, oldest -> newest.
+  /// Reads all_records (every logged reading — normal + fall); each row carries
+  /// hr/spo2/ts regardless of record_type, so all of them plot fine.
   Stream<List<Vitals>> vitalsHistory({int limit = 200}) {
     return _db
-        .ref("history/vitals")
+        .ref("all_records")
         .orderByChild("ts")
         .limitToLast(limit)
         .onValue
@@ -52,7 +56,7 @@ class DatabaseService {
   /// Confirmed falls, newest first.
   Stream<List<FallEvent>> falls({int limit = 100}) {
     return _db
-        .ref("falls")
+        .ref("fall_events")
         .orderByChild("ts")
         .limitToLast(limit)
         .onValue

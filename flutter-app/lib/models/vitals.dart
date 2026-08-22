@@ -1,6 +1,7 @@
 /// One vitals snapshot, matching the Firebase shape written by the backend:
-///   telemetry/latest        : { hr, spo2, status, ts }
-///   history/vitals/<pushId> : { hr, spo2, status, ts }
+///   telemetry/latest     : { hr, spo2, status, ts, ... }
+///   all_records/<pushId> : { record_type, hr, spo2, status, ts, ... }
+/// Extra fields (accel_g, tilt, record_type, features, …) are ignored here.
 class Vitals {
   final int hr;
   final int spo2;

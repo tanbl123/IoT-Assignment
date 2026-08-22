@@ -6,14 +6,14 @@ the same Firebase Realtime Database the Python backend writes to and shows:
 | Tab | What it shows | Firebase source |
 |-----|---------------|-----------------|
 | **Live** | Current HR / SpO2, last-updated time, red "FALL DETECTED" banner with an *Acknowledge* button | `telemetry/latest`, `state/alert` |
-| **Falls** | Log of every confirmed fall (time, vitals, GPS) | `falls/<pushId>` |
-| **Reports** | Avg HR/SpO2, HR & SpO2 line charts over time, falls-per-day bar chart | `history/vitals/<pushId>`, `falls/<pushId>` |
+| **Falls** | Log of every confirmed fall (time, vitals, GPS) | `fall_events/<pushId>` |
+| **Reports** | Avg HR/SpO2, HR & SpO2 line charts over time, falls-per-day bar chart | `all_records/<pushId>`, `fall_events/<pushId>` |
 
 > The Reports tab is the assignment's *"generate an analysis report from the
-> collected data"* deliverable. It needs **historical** data, which is why the
-> backend now logs a vitals snapshot to `history/vitals` every ~10 s (see
-> "How the data gets there" below) — `telemetry/latest` alone is overwritten on
-> every reading and can't be graphed over time.
+> collected data"* deliverable. It needs **historical** data. `telemetry/latest`
+> is overwritten on every reading and can't be graphed over time, so the backend
+> also appends each reading to `all_records` (every few seconds) — that
+> append-only log is what the charts read.
 
 ---
 
@@ -22,15 +22,18 @@ the same Firebase Realtime Database the Python backend writes to and shows:
 The app and `backend-python/firebase_client.py` agree on this shape:
 
 ```
-telemetry/latest        : { hr, spo2, status, ts }          # live tile (overwritten)
-history/vitals/<pushId> : { hr, spo2, status, ts }          # time-series for charts  (NEW)
-falls/<pushId>          : { hr, spo2, lat, lng, ts, status } # fall history + report counts
-state/alert             : true|false                        # drives the red banner
+telemetry/latest        : { hr, spo2, status, accel_g, tilt, lat, lng, ts }  # live tile (overwritten)
+all_records/<pushId>    : { record_type, hr, spo2, ts, ... }   # every reading — history/time-series for charts
+all_records_latest      : { ...last record... }
+fall_events/<pushId>    : { hr, spo2, lat, lng, ts, status }   # confirmed falls -> Falls tab + report counts
+state/alert             : true|false                           # drives the red banner
 state/confirmed         : true|false
 state/latestFall        : { ...last fall... }
 ```
 
-`ts` is Unix **seconds**.
+`record_type` is one of `NORMAL_TELEMETRY`, `FALL_DETECTION_RESULT`, or
+`FALL_CONFIRMED`. The charts read every `all_records` row (they all carry
+`hr`/`spo2`/`ts`); the Falls tab reads `fall_events`. `ts` is Unix **seconds**.
 
 ---
 
@@ -70,35 +73,37 @@ but reminds you to configure it before running.
 ```
 ESP32 sensor ──serial──► live_inference.py ──► Firebase RTDB ──► THIS APP
    (HR, SpO2,             (Random Forest             │
-    fall_suspected)        confirms fall)            ├─ telemetry/latest   (every reading)
-                                                     ├─ history/vitals     (every ~10 s)  ← charts
-                                                     ├─ falls/<pushId>     (on confirmed fall)
-                                                     └─ state/alert = true (on confirmed fall)
+    fall_suspected)        confirms fall)            ├─ telemetry/latest    (every reading)
+                                                     ├─ all_records/<id>    (every few s)  ← charts
+                                                     ├─ fall_events/<id>    (on confirmed fall)
+                                                     └─ state/alert = true  (on confirmed fall)
 ```
 
-The throttle interval is `FIREBASE_HISTORY_INTERVAL` (default 10 s) in
+The history throttle is `NORMAL_RECORD_INTERVAL_SECONDS` (default 5 s) in
 `backend-python/firebase_client.py`.
 
 ### No hardware yet? Seed some demo data
 
 To demo the app before the ESP32 is wired up, add rows straight to the database
-(Firebase console → Realtime Database → import JSON), e.g.:
+(Firebase console → Realtime Database → ⋮ → Import JSON), e.g.:
 
 ```json
 {
   "telemetry": { "latest": { "hr": 78, "spo2": 97, "status": "OK", "ts": 1690000000 } },
-  "history": { "vitals": {
-    "s1": { "hr": 76, "spo2": 98, "status": "OK", "ts": 1690000000 },
-    "s2": { "hr": 81, "spo2": 97, "status": "OK", "ts": 1690000600 },
-    "s3": { "hr": 120, "spo2": 92, "status": "OK", "ts": 1690001200 }
-  }},
-  "falls": {
+  "all_records": {
+    "s1": { "record_type": "NORMAL_TELEMETRY", "hr": 76, "spo2": 98, "status": "OK", "ts": 1690000000 },
+    "s2": { "record_type": "NORMAL_TELEMETRY", "hr": 81, "spo2": 97, "status": "OK", "ts": 1690000600 },
+    "s3": { "record_type": "NORMAL_TELEMETRY", "hr": 120, "spo2": 92, "status": "OK", "ts": 1690001200 }
+  },
+  "fall_events": {
     "f1": { "hr": 120, "spo2": 92, "lat": 3.2159, "lng": 101.7290, "ts": 1690001200, "status": "FALL_CONFIRMED" }
   }
 }
 ```
 
-The charts and history list will populate immediately.
+⚠️ **Import replaces the whole database.** To keep your existing data, add these
+nodes by hand instead, or export first. The charts and history list will
+populate immediately once the rows exist.
 
 ---
 

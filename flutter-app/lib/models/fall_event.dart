@@ -1,5 +1,5 @@
 /// One confirmed fall, matching the Firebase shape written by the backend:
-///   falls/<pushId> : { hr, spo2, lat, lng, ts, status }
+///   fall_events/<pushId> : { hr, spo2, lat, lng, ts, status }
 class FallEvent {
   final String id; // Firebase push key
   final int hr;
