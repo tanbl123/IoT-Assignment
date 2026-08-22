@@ -43,7 +43,7 @@ OUT_HTML  = "results-dashboard.html"
 TEAL, INDIGO = "#0E9E8E", "#4C6EF5"
 GOOD, WARN, CRIT = "#128A4C", "#B96E1B", "#C93A3A"
 INK, MUTED, GRID = "#1f2a27", "#5C6B69", "#E4E9E7"
-IMAGE_FEATURES = {"bbox_aspect_ratio", "centroid_height", "frame_motion"}
+IMAGE_FEATURES = {"bbox_aspect_ratio", "centroid_height", "frame_motion", "descent_speed"}
 
 
 def new_rf():

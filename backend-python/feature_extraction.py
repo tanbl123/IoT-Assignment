@@ -33,6 +33,7 @@ FEATURE_NAMES = [
     "bbox_aspect_ratio",
     "centroid_height",
     "frame_motion",
+    "descent_speed",   # temporal: how fast the person went down (fall = fast)
 ]
 
 
@@ -190,6 +191,51 @@ def image_features(frames: list, save_debug_path: str | None = None) -> dict:
     }
 
 
+def temporal_features(frames: list) -> dict:
+    """
+    Video-like feature: how FAST the person moved downward across the frame burst.
+
+    A fall is a *process* — a rapid descent then stillness — whereas lying down
+    is slow and controlled. This tracks the moving blob's centroid height over the
+    sequence and reports the largest downward jump between consecutive frames:
+
+        descent_speed = max positive change in centroid_y per frame (0..1)
+                        high  -> fast drop  -> fall-like
+                        low   -> slow / no descent -> lying down / standing
+
+    Returns 0.0 if OpenCV is missing or there aren't enough frames — so the
+    pipeline still runs (e.g. training rows with no camera).
+    """
+    default = {"descent_speed": 0.0}
+    if cv2 is None or len(frames) < 3:
+        return default
+
+    grays = [cv2.GaussianBlur(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+             for f in frames]
+    H, W = grays[0].shape[0], grays[0].shape[1]
+    min_area = max(100, H * W * 0.002)
+
+    centroids = []          # normalised centroid_y of the moving blob per step
+    for i in range(1, len(grays)):
+        diff = cv2.absdiff(grays[i], grays[i - 1])
+        _, thr = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+        thr = cv2.morphologyEx(thr, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        cnts, _ = cv2.findContours(thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            continue
+        c = max(cnts, key=cv2.contourArea)
+        if cv2.contourArea(c) < min_area:
+            continue
+        _, y, _, h = cv2.boundingRect(c)
+        centroids.append((y + h / 2) / H)
+
+    if len(centroids) < 2:
+        return default
+
+    velocities = [centroids[i] - centroids[i - 1] for i in range(1, len(centroids))]
+    return {"descent_speed": float(max(0.0, max(velocities)))}
+
+
 def extract_all_features(
     accel_window,
     tilt_window,
@@ -198,10 +244,12 @@ def extract_all_features(
 ) -> dict:
     m = motion_features(accel_window, tilt_window)
     im = image_features(frames or [], save_debug_path=save_debug_path)
+    tm = temporal_features(frames or [])
 
     return {
         **m,
         **im,
+        **tm,
     }
 
 
