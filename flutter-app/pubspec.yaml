@@ -1,0 +1,31 @@
+name: fall_detection_app
+description: "Caregiver app for the Smart Elderly Fall Detection System (BMIT2123 IoT)."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase (Realtime Database — same DB the Python backend writes to)
+  firebase_core: ^3.6.0
+  firebase_database: ^11.1.4
+
+  # Charts for the analytics/reports screen
+  fl_chart: ^0.69.0
+
+  # Date/time formatting for history + reports
+  intl: ^0.19.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

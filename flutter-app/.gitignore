@@ -1,0 +1,24 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.pub-cache/
+.pub/
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Firebase config (per the project rules — never commit these)
+google-services.json
+GoogleService-Info.plist
+# NOTE: lib/firebase_options.dart is committed as a guided PLACEHOLDER so the
+# project compiles on a fresh clone. `flutterfire configure` overwrites it
+# locally with your real project keys — don't commit that overwritten copy.
+
+# OS
+.DS_Store
