@@ -8,30 +8,92 @@ import "../services/database_service.dart";
 
 /// Reports / analytics: the "Generate an analysis report from the collected
 /// data" deliverable. Reads the append-only history the backend logs and turns
-/// it into summary numbers + charts.
-class AnalyticsScreen extends StatelessWidget {
+/// it into summary numbers + charts. A date picker lets a caregiver view a
+/// specific day; by default it shows the most recent data.
+class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
 
   @override
+  State<AnalyticsScreen> createState() => _AnalyticsScreenState();
+}
+
+class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  final DatabaseService _db = DatabaseService();
+  DateTime? _selectedDay; // null = recent data (default)
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay ?? now,
+      firstDate: DateTime(2024),
+      lastDate: now,
+    );
+    if (picked != null) setState(() => _selectedDay = picked);
+  }
+
+  List<Vitals> _filterByDay(List<Vitals> data) {
+    final d = _selectedDay;
+    if (d == null) return data;
+    return data.where((v) {
+      final t = v.time;
+      return t.year == d.year && t.month == d.month && t.day == d.day;
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final db = DatabaseService();
     return Scaffold(
       appBar: AppBar(title: const Text("Reports & Analytics")),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ---------- Date selector ----------
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _selectedDay == null
+                          ? "Showing: recent data"
+                          : "Showing: ${DateFormat.yMMMEd().format(_selectedDay!)}",
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  if (_selectedDay != null)
+                    TextButton(
+                      onPressed: () => setState(() => _selectedDay = null),
+                      child: const Text("Recent"),
+                    ),
+                  FilledButton.tonal(
+                    onPressed: _pickDate,
+                    child: const Text("Pick a date"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // ---------- Vitals section ----------
           StreamBuilder<List<Vitals>>(
-            stream: db.vitalsHistory(),
+            stream: _db.vitalsHistory(limit: 2000),
             builder: (context, snap) {
-              final data = snap.data ?? [];
               if (snap.connectionState == ConnectionState.waiting) {
                 return const _Loading();
               }
+              final data = _filterByDay(snap.data ?? []);
               if (data.isEmpty) {
-                return const _EmptyCard(
-                  "No health data yet.\n"
-                  "Charts will appear here once the device starts recording readings.",
+                return _EmptyCard(
+                  _selectedDay == null
+                      ? "No health data yet.\n"
+                          "Charts will appear here once the device starts recording readings."
+                      : "No readings recorded on "
+                          "${DateFormat.yMMMEd().format(_selectedDay!)}.",
                 );
               }
               final avgHr = _avg(data.map((v) => v.hr));
@@ -91,7 +153,7 @@ class AnalyticsScreen extends StatelessWidget {
 
           // ---------- Falls section ----------
           StreamBuilder<List<FallEvent>>(
-            stream: db.falls(),
+            stream: _db.falls(),
             builder: (context, snap) {
               final falls = snap.data ?? [];
               final perDay = _fallsPerDay(falls, days: 7);
