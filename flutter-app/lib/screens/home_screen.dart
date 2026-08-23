@@ -69,8 +69,8 @@ class HomeScreen extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
-                      "Waiting for the first reading from the backend…\n"
-                      "Run live_inference.py (or the demo) to start streaming.",
+                      "Connecting to the device…\n"
+                      "Live readings will appear here once the device is switched on.",
                     ),
                   ),
                 );

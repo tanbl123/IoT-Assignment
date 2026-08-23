@@ -31,8 +31,8 @@ class LocationHistoryScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  "No location history yet.\n"
-                  "Locations appear once the GPS gets a fix and readings are logged.",
+                  "No places recorded yet.\n"
+                  "Locations will appear here once the device has a GPS signal.",
                   textAlign: TextAlign.center,
                 ),
               ),

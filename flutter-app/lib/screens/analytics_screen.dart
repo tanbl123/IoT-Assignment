@@ -30,8 +30,8 @@ class AnalyticsScreen extends StatelessWidget {
               }
               if (data.isEmpty) {
                 return const _EmptyCard(
-                  "No vitals history yet.\nThe backend appends a reading to "
-                  "all_records every few seconds once it is streaming.",
+                  "No health data yet.\n"
+                  "Charts will appear here once the device starts recording readings.",
                 );
               }
               final avgHr = _avg(data.map((v) => v.hr));

@@ -26,7 +26,10 @@ class HistoryScreen extends StatelessWidget {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text("No falls recorded yet. 🎉"),
+                child: Text(
+                  "No falls recorded — that's good news! 🎉",
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
