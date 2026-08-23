@@ -74,6 +74,14 @@ class AnalyticsScreen extends StatelessWidget {
                     minY: 80,
                     maxY: 100,
                   ),
+                  const SizedBox(height: 16),
+                  _SectionTitle("Acceleration (motion) over time"),
+                  _LineCard(
+                    spots: _spots(data, (v) => v.accelG),
+                    color: Colors.orange,
+                    minY: 0,
+                    maxY: 4,
+                  ),
                 ],
               );
             },

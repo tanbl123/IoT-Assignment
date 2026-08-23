@@ -98,14 +98,51 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _VitalTile(
+                          label: "Acceleration",
+                          value: v.accelG >= 0
+                              ? v.accelG.toStringAsFixed(2)
+                              : "--",
+                          unit: "g",
+                          icon: Icons.speed,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      Expanded(
+                        child: _VitalTile(
+                          label: "Tilt",
+                          value: v.tilt >= 0 ? v.tilt.toStringAsFixed(0) : "--",
+                          unit: "°",
+                          icon: Icons.screen_rotation,
+                          color: Colors.purple,
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.access_time),
-                      title: Text("Status: ${v.status}"),
-                      subtitle: Text(
-                        "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}",
-                      ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.access_time),
+                          title: Text("Status: ${v.status}"),
+                          subtitle: Text(
+                            "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}",
+                          ),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.location_on),
+                          title: const Text("Location"),
+                          subtitle: Text(
+                            v.hasGps
+                                ? "${v.lat.toStringAsFixed(5)}, ${v.lng.toStringAsFixed(5)}"
+                                : "No GPS fix yet",
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
