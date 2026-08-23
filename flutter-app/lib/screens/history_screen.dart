@@ -65,42 +65,59 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Fall History")),
-      body: Column(
-        children: [
-          _filterBar(),
-          const Divider(height: 1),
-          Expanded(
-            child: StreamBuilder<List<FallEvent>>(
-              stream: _db.falls(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final falls = (snap.data ?? [])
-                    .where((f) => _inRange(f.time))
-                    .toList();
-                if (falls.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        _mode == "all"
-                            ? "No falls recorded — that's good news! 🎉"
-                            : "No falls in the selected period. 🎉",
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  itemCount: falls.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) => _fallTile(falls[i]),
-                );
-              },
-            ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            children: [
+              _filterBar(),
+              Expanded(
+                child: StreamBuilder<List<FallEvent>>(
+                  stream: _db.falls(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final falls = (snap.data ?? [])
+                        .where((f) => _inRange(f.time))
+                        .toList();
+                    if (falls.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _mode == "all"
+                                ? "No falls recorded — that's good news! 🎉"
+                                : "No falls in the selected period. 🎉",
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                      itemCount: falls.length + 1,
+                      itemBuilder: (context, i) {
+                        if (i == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                            child: Text(
+                              "${falls.length} fall${falls.length == 1 ? '' : 's'}"
+                              "${_mode == 'all' ? '' : ' in this period'}",
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(color: Colors.grey.shade600),
+                            ),
+                          );
+                        }
+                        return _fallTile(falls[i - 1]);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -143,11 +160,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _fallTile(FallEvent f) {
-    return ListTile(
-      leading: const CircleAvatar(
-        backgroundColor: Colors.red,
-        child: Icon(Icons.personal_injury, color: Colors.white),
-      ),
+    return Card(
+      elevation: 0,
+      color: Colors.red.withOpacity(0.06),
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: Colors.red,
+          child: Icon(Icons.personal_injury, color: Colors.white),
+        ),
       title: Text(DateFormat.yMMMEd().add_jms().format(f.time)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,6 +193,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       trailing: const Icon(Icons.chevron_right),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => FallDetailScreen(fall: f)),
+      ),
       ),
     );
   }

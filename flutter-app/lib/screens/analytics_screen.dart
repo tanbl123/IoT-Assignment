@@ -52,9 +52,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Reports & Analytics")),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
           // ---------- Date selector ----------
           Card(
             child: Padding(
@@ -188,7 +191,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               );
             },
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

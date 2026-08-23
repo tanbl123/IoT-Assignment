@@ -19,9 +19,12 @@ class LocationHistoryScreen extends StatelessWidget {
     final db = DatabaseService();
     return Scaffold(
       appBar: AppBar(title: const Text("Location History")),
-      body: StreamBuilder<List<Vitals>>(
-        stream: db.vitalsHistory(limit: 500),
-        builder: (context, snap) {
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: StreamBuilder<List<Vitals>>(
+            stream: db.vitalsHistory(limit: 500),
+            builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -38,36 +41,45 @@ class LocationHistoryScreen extends StatelessWidget {
               ),
             );
           }
-          return ListView.separated(
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             itemCount: segments.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final s = segments[i];
-              return ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Colors.teal,
-                  child: Icon(Icons.place, color: Colors.white),
-                ),
-                title: LocationView(lat: s.lat, lng: s.lng),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(_range(s.start, s.end)),
-                ),
-                isThreeLine: true,
-                trailing: IconButton(
-                  icon: const Icon(Icons.map),
-                  tooltip: "Open in Google Maps",
-                  onPressed: () => launchUrl(
-                    Uri.parse(
-                      "https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}",
+              return Card(
+                elevation: 0,
+                color: Colors.teal.withOpacity(0.07),
+                margin: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Colors.teal,
+                    child: Icon(Icons.place, color: Colors.white),
+                  ),
+                  title: LocationView(lat: s.lat, lng: s.lng),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(_range(s.start, s.end)),
+                  ),
+                  isThreeLine: true,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.map),
+                    tooltip: "Open in Google Maps",
+                    onPressed: () => launchUrl(
+                      Uri.parse(
+                        "https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}",
+                      ),
+                      mode: LaunchMode.externalApplication,
                     ),
-                    mode: LaunchMode.externalApplication,
                   ),
                 ),
               );
             },
           );
-        },
+            },
+          ),
+        ),
       ),
     );
   }
