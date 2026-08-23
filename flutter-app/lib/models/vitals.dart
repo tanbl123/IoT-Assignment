@@ -15,7 +15,11 @@ class Vitals {
     required this.ts,
   });
 
-  DateTime get time => DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+  // ts may be seconds (10 digits, from the Python backend) or milliseconds
+  // (13 digits, from older writers). Normalise both to a real DateTime.
+  DateTime get time => DateTime.fromMillisecondsSinceEpoch(
+        ts > 1000000000000 ? ts : ts * 1000,
+      );
 
   /// Firebase returns a Map<Object?, Object?>; numbers may arrive as int,
   /// double or String, so parse defensively.

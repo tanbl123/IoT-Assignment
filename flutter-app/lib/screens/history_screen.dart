@@ -33,6 +33,7 @@ class HistoryScreen extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final f = falls[i];
+              final hasGps = f.lat != 0.0 || f.lng != 0.0;
               return ListTile(
                 leading: const CircleAvatar(
                   backgroundColor: Colors.red,
@@ -43,11 +44,10 @@ class HistoryScreen extends StatelessWidget {
                 ),
                 subtitle: Text(
                   "HR ${f.hr >= 0 ? f.hr : '--'} bpm   •   "
-                  "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%\n"
-                  "Location: ${f.lat.toStringAsFixed(5)}, "
-                  "${f.lng.toStringAsFixed(5)}",
+                  "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%"
+                  "${hasGps ? "\nLocation: ${f.lat.toStringAsFixed(5)}, ${f.lng.toStringAsFixed(5)}" : ""}",
                 ),
-                isThreeLine: true,
+                isThreeLine: hasGps,
               );
             },
           );

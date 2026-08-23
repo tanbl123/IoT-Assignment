@@ -19,7 +19,11 @@ class FallEvent {
     required this.status,
   });
 
-  DateTime get time => DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+  // ts may be seconds (10 digits, from the Python backend) or milliseconds
+  // (13 digits, from older writers). Normalise both to a real DateTime.
+  DateTime get time => DateTime.fromMillisecondsSinceEpoch(
+        ts > 1000000000000 ? ts : ts * 1000,
+      );
 
   factory FallEvent.fromMap(String id, Map<dynamic, dynamic> m) {
     int asInt(dynamic v) =>

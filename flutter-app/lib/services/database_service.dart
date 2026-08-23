@@ -1,3 +1,5 @@
+import "dart:async";
+
 import "package:firebase_core/firebase_core.dart";
 import "package:firebase_database/firebase_database.dart";
 
@@ -12,7 +14,8 @@ import "../models/fall_event.dart";
 ///   telemetry/latest         -> live tile        (overwritten each reading)
 ///   all_records/<pushId>     -> HR/SpO2 charts    (append-only history of every
 ///                               reading; record_type marks normal vs fall)
-///   fall_events/<pushId>     -> confirmed-fall history + report counts
+///   falls/<pushId> + fall_events/<pushId> -> confirmed-fall history (merged;
+///                               falls = older data, fall_events = new)
 ///   state/alert              -> red "FALL!" banner
 class DatabaseService {
   DatabaseService() : _db = FirebaseDatabase.instanceFor(
@@ -53,10 +56,41 @@ class DatabaseService {
     });
   }
 
-  /// Confirmed falls, newest first.
+  /// Confirmed falls, newest first — MERGED from two nodes:
+  ///   * falls        (older test data written by earlier code)
+  ///   * fall_events  (what the current backend writes)
+  /// so both historical and new falls appear in one list.
   Stream<List<FallEvent>> falls({int limit = 100}) {
+    final controller = StreamController<List<FallEvent>>();
+    var fromFalls = <FallEvent>[];
+    var fromEvents = <FallEvent>[];
+
+    void emit() {
+      final merged = [...fromFalls, ...fromEvents]
+        ..sort((a, b) => b.ts.compareTo(a.ts)); // newest first
+      controller.add(merged);
+    }
+
+    final sub1 = _fallsFrom("falls", limit).listen((v) {
+      fromFalls = v;
+      emit();
+    });
+    final sub2 = _fallsFrom("fall_events", limit).listen((v) {
+      fromEvents = v;
+      emit();
+    });
+
+    controller.onCancel = () {
+      sub1.cancel();
+      sub2.cancel();
+    };
+    return controller.stream;
+  }
+
+  /// Read one fall node into a list of FallEvent.
+  Stream<List<FallEvent>> _fallsFrom(String node, int limit) {
     return _db
-        .ref("fall_events")
+        .ref(node)
         .orderByChild("ts")
         .limitToLast(limit)
         .onValue
@@ -68,7 +102,6 @@ class DatabaseService {
           if (value is Map) out.add(FallEvent.fromMap("$key", value));
         });
       }
-      out.sort((a, b) => b.ts.compareTo(a.ts)); // newest first
       return out;
     });
   }
