@@ -5,8 +5,8 @@ import "../models/vitals.dart";
 import "../services/database_service.dart";
 import "../widgets/location_view.dart";
 
-/// Live status: current heart rate / SpO2, connection freshness, and a big red
-/// banner when a fall alert is active.
+/// Live status: a status hero, the current vitals/motion tiles, and location.
+/// A big red banner replaces the hero when a fall alert is active.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -15,144 +15,225 @@ class HomeScreen extends StatelessWidget {
     final db = DatabaseService();
     return Scaffold(
       appBar: AppBar(title: const Text("Live Status")),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // ---- Alert banner ----
-          StreamBuilder<bool>(
-            stream: db.alertActive(),
-            builder: (context, snap) {
-              if (snap.data != true) return const SizedBox.shrink();
-              return Card(
-                color: Colors.red.shade600,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded,
-                          color: Colors.white, size: 36),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          "FALL DETECTED",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: db.clearAlert,
-                        child: const Text("Acknowledge"),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // ---- Live vitals ----
-          StreamBuilder<Vitals?>(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: StreamBuilder<Vitals?>(
             stream: db.latestVitals(),
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: CircularProgressIndicator()),
-                );
+                return const Center(child: CircularProgressIndicator());
               }
               final v = snap.data;
-              if (v == null) {
-                return const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      "Connecting to the device…\n"
-                      "Live readings will appear here once the device is switched on.",
-                    ),
-                  ),
-                );
-              }
-              return Column(
+              return ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _VitalTile(
-                          label: "Heart Rate",
-                          value: v.hr >= 0 ? "${v.hr}" : "--",
-                          unit: "bpm",
-                          icon: Icons.favorite,
-                          color: Colors.red,
-                        ),
-                      ),
-                      Expanded(
-                        child: _VitalTile(
-                          label: "SpO2",
-                          value: v.spo2 >= 0 ? "${v.spo2}" : "--",
-                          unit: "%",
-                          icon: Icons.bloodtype,
-                          color: Colors.blue,
-                        ),
-                      ),
-                    ],
+                  // ---- status hero / alert banner ----
+                  StreamBuilder<bool>(
+                    stream: db.alertActive(),
+                    builder: (context, alertSnap) {
+                      final alerting = alertSnap.data == true;
+                      return _StatusHero(
+                        vitals: v,
+                        alerting: alerting,
+                        onAcknowledge: db.clearAlert,
+                      );
+                    },
                   ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _VitalTile(
-                          label: "Acceleration",
-                          value: v.accelG >= 0
-                              ? v.accelG.toStringAsFixed(2)
-                              : "--",
-                          unit: "g",
-                          icon: Icons.speed,
-                          color: Colors.orange,
+                  const SizedBox(height: 16),
+
+                  if (v == null)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          "Connecting to the device…\n"
+                          "Live readings will appear here once the device is switched on.",
                         ),
                       ),
-                      Expanded(
-                        child: _VitalTile(
-                          label: "Tilt",
-                          value: v.tilt >= 0 ? v.tilt.toStringAsFixed(0) : "--",
-                          unit: "°",
-                          icon: Icons.screen_rotation,
-                          color: Colors.purple,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: Column(
+                    )
+                  else ...[
+                    // ---- vitals + motion tiles ----
+                    Row(
                       children: [
-                        ListTile(
-                          leading: const Icon(Icons.access_time),
-                          title: Text("Status: ${_friendlyStatus(v.status)}"),
-                          subtitle: Text(
-                            v.hasValidTime
-                                ? "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}"
-                                : "Receiving live data",
+                        Expanded(
+                          child: _VitalTile(
+                            label: "Heart Rate",
+                            value: v.hr >= 0 ? "${v.hr}" : "--",
+                            unit: "bpm",
+                            icon: Icons.favorite,
+                            color: Colors.red,
                           ),
                         ),
-                        ListTile(
-                          leading: Icon(
-                            Icons.location_on,
-                            color: v.hasGps ? null : Colors.grey,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _VitalTile(
+                            label: "SpO2",
+                            value: v.spo2 >= 0 ? "${v.spo2}" : "--",
+                            unit: "%",
+                            icon: Icons.bloodtype,
+                            color: Colors.blue,
                           ),
-                          title: const Text("Location"),
-                          subtitle: v.hasGps
-                              ? LocationView(lat: v.lat, lng: v.lng)
-                              : const Text("Acquiring GPS signal…"),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _VitalTile(
+                            label: "Acceleration",
+                            value: v.accelG >= 0
+                                ? v.accelG.toStringAsFixed(2)
+                                : "--",
+                            unit: "g",
+                            icon: Icons.speed,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _VitalTile(
+                            label: "Tilt",
+                            value:
+                                v.tilt >= 0 ? v.tilt.toStringAsFixed(0) : "--",
+                            unit: "°",
+                            icon: Icons.screen_rotation,
+                            color: Colors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ---- location ----
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.location_on,
+                                color: v.hasGps
+                                    ? Colors.teal
+                                    : Colors.grey.shade400),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Location",
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall),
+                                  const SizedBox(height: 4),
+                                  v.hasGps
+                                      ? LocationView(lat: v.lat, lng: v.lng)
+                                      : const Text("Acquiring GPS signal…"),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Big banner at the top: green while normal, red while a fall alert is active.
+class _StatusHero extends StatelessWidget {
+  final Vitals? vitals;
+  final bool alerting;
+  final VoidCallback onAcknowledge;
+  const _StatusHero({
+    required this.vitals,
+    required this.alerting,
+    required this.onAcknowledge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (alerting) {
+      return _shell(
+        colors: [Colors.red.shade400, Colors.red.shade700],
+        icon: Icons.warning_amber_rounded,
+        title: "FALL DETECTED",
+        subtitle: "Tap acknowledge once you've checked on them",
+        trailing: FilledButton.tonal(
+          onPressed: onAcknowledge,
+          child: const Text("Acknowledge"),
+        ),
+      );
+    }
+
+    final v = vitals;
+    final connecting = v == null;
+    final subtitle = connecting
+        ? "Connecting to the device…"
+        : (v.hasValidTime
+            ? "Updated ${DateFormat.jm().format(v.time)}"
+            : "Receiving live data");
+
+    return _shell(
+      colors: connecting
+          ? [Colors.blueGrey.shade300, Colors.blueGrey.shade500]
+          : [Colors.teal.shade400, Colors.teal.shade700],
+      icon: connecting ? Icons.sync : Icons.shield_outlined,
+      title: connecting ? "Connecting" : _friendlyStatus(v.status),
+      subtitle: subtitle,
+    );
+  }
+
+  Widget _shell({
+    required List<Color> colors,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    Widget? trailing,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 40),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing,
         ],
       ),
     );
@@ -177,22 +258,43 @@ class _VitalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 0,
+      color: color.withOpacity(0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(label, style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: color.withOpacity(0.18),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 6),
             RichText(
               text: TextSpan(
-                style: Theme.of(context).textTheme.headlineMedium,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).textTheme.headlineMedium?.color,
+                    ),
                 children: [
                   TextSpan(text: value),
                   TextSpan(
                     text: " $unit",
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -212,4 +314,3 @@ String _friendlyStatus(String s) {
   if (u.contains("FALL")) return "Fall detected";
   return s;
 }
-
