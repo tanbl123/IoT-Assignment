@@ -5,6 +5,7 @@ import "firebase_options.dart";
 import "screens/home_screen.dart";
 import "screens/history_screen.dart";
 import "screens/analytics_screen.dart";
+import "screens/location_history_screen.dart";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,7 @@ class _RootNavState extends State<RootNav> {
   static const _screens = [
     HomeScreen(),
     HistoryScreen(),
+    LocationHistoryScreen(),
     AnalyticsScreen(),
   ];
 
@@ -64,6 +66,11 @@ class _RootNavState extends State<RootNav> {
           NavigationDestination(
             icon: Icon(Icons.history),
             label: "Falls",
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.place_outlined),
+            selectedIcon: Icon(Icons.place),
+            label: "Location",
           ),
           NavigationDestination(
             icon: Icon(Icons.insights),
