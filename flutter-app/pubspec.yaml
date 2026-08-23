@@ -20,6 +20,9 @@ dependencies:
   # Date/time formatting for history + reports
   intl: ^0.19.0
 
+  # Reverse geocoding (coordinates -> place name) via OpenStreetMap
+  http: ^1.2.0
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

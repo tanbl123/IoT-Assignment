@@ -3,6 +3,7 @@ import "package:intl/intl.dart";
 
 import "../models/vitals.dart";
 import "../services/database_service.dart";
+import "../services/geocoding_service.dart";
 
 /// Live status: current heart rate / SpO2, connection freshness, and a big red
 /// banner when a fall alert is active.
@@ -128,7 +129,7 @@ class HomeScreen extends StatelessWidget {
                       children: [
                         ListTile(
                           leading: const Icon(Icons.access_time),
-                          title: Text("Status: ${v.status}"),
+                          title: Text("Status: ${_friendlyStatus(v.status)}"),
                           subtitle: Text(
                             "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}",
                           ),
@@ -136,11 +137,9 @@ class HomeScreen extends StatelessWidget {
                         ListTile(
                           leading: const Icon(Icons.location_on),
                           title: const Text("Location"),
-                          subtitle: Text(
-                            v.hasGps
-                                ? "${v.lat.toStringAsFixed(5)}, ${v.lng.toStringAsFixed(5)}"
-                                : "No GPS fix yet",
-                          ),
+                          subtitle: v.hasGps
+                              ? _LocationText(lat: v.lat, lng: v.lng)
+                              : const Text("No GPS fix yet"),
                         ),
                       ],
                     ),
@@ -196,6 +195,41 @@ class _VitalTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Turn a raw status string into something friendly for the caregiver.
+String _friendlyStatus(String s) {
+  final u = s.trim().toUpperCase();
+  if (u.isEmpty || u == "UNKNOWN") return "Monitoring";
+  if (u == "OK") return "Normal";
+  if (u.contains("FALL")) return "Fall detected";
+  return s;
+}
+
+/// Location row: reverse-geocodes the coordinates to a place name, and shows
+/// it as "Place name (longitude: x, latitude: y)". Falls back to coordinates
+/// only while loading or if the lookup fails.
+class _LocationText extends StatelessWidget {
+  final double lat;
+  final double lng;
+  const _LocationText({required this.lat, required this.lng});
+
+  String get _coords =>
+      "(longitude: ${lng.toStringAsFixed(5)}, latitude: ${lat.toStringAsFixed(5)})";
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: GeocodingService.reverseGeocode(lat, lng),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return Text("Locating…  $_coords");
+        }
+        final name = snap.data;
+        return Text(name != null ? "$name\n$_coords" : _coords);
+      },
     );
   }
 }
