@@ -8,6 +8,7 @@ class FallEvent {
   final double lng;
   final int ts; // unix seconds
   final String status;
+  final Map<String, dynamic> raw; // every field stored on the record
 
   const FallEvent({
     required this.id,
@@ -17,6 +18,7 @@ class FallEvent {
     required this.lng,
     required this.ts,
     required this.status,
+    this.raw = const {},
   });
 
   // ts may be seconds (10 digits, from the Python backend) or milliseconds
@@ -40,6 +42,7 @@ class FallEvent {
       lng: asDouble(m["lng"]),
       ts: asInt(m["ts"]),
       status: (m["status"] ?? "FALL_CONFIRMED").toString(),
+      raw: m.map((k, v) => MapEntry(k.toString(), v)),
     );
   }
 }

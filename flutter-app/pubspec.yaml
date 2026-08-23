@@ -23,6 +23,9 @@ dependencies:
   # Reverse geocoding (coordinates -> place name) via OpenStreetMap
   http: ^1.2.0
 
+  # Open the fall location in Google Maps
+  url_launcher: ^6.3.0
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

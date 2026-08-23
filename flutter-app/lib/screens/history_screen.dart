@@ -4,6 +4,7 @@ import "package:intl/intl.dart";
 import "../models/fall_event.dart";
 import "../services/database_service.dart";
 import "../widgets/location_view.dart";
+import "fall_detail_screen.dart";
 
 /// Scrollable log of every confirmed fall (Firebase `falls/`), newest first.
 class HistoryScreen extends StatelessWidget {
@@ -61,6 +62,12 @@ class HistoryScreen extends StatelessWidget {
                   ],
                 ),
                 isThreeLine: f.hasGps,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FallDetailScreen(fall: f),
+                  ),
+                ),
               );
             },
           );
