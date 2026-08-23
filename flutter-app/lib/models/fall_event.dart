@@ -21,6 +21,8 @@ class FallEvent {
 
   // ts may be seconds (10 digits, from the Python backend) or milliseconds
   // (13 digits, from older writers). Normalise both to a real DateTime.
+  bool get hasGps => lat != 0.0 || lng != 0.0;
+
   DateTime get time => DateTime.fromMillisecondsSinceEpoch(
         ts > 1000000000000 ? ts : ts * 1000,
       );

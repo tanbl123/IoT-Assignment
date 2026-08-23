@@ -3,6 +3,7 @@ import "package:intl/intl.dart";
 
 import "../models/fall_event.dart";
 import "../services/database_service.dart";
+import "../widgets/location_view.dart";
 
 /// Scrollable log of every confirmed fall (Firebase `falls/`), newest first.
 class HistoryScreen extends StatelessWidget {
@@ -33,7 +34,6 @@ class HistoryScreen extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final f = falls[i];
-              final hasGps = f.lat != 0.0 || f.lng != 0.0;
               return ListTile(
                 leading: const CircleAvatar(
                   backgroundColor: Colors.red,
@@ -42,12 +42,25 @@ class HistoryScreen extends StatelessWidget {
                 title: Text(
                   DateFormat.yMMMEd().add_jms().format(f.time),
                 ),
-                subtitle: Text(
-                  "HR ${f.hr >= 0 ? f.hr : '--'} bpm   •   "
-                  "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%"
-                  "${hasGps ? "\nLocation: ${f.lat.toStringAsFixed(5)}, ${f.lng.toStringAsFixed(5)}" : ""}",
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "HR ${f.hr >= 0 ? f.hr : '--'} bpm   •   "
+                      "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%",
+                    ),
+                    if (f.hasGps)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: LocationView(
+                          lat: f.lat,
+                          lng: f.lng,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
                 ),
-                isThreeLine: hasGps,
+                isThreeLine: f.hasGps,
               );
             },
           );

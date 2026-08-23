@@ -27,6 +27,11 @@ class Vitals {
 
   bool get hasGps => lat != 0.0 || lng != 0.0;
 
+  // A real epoch timestamp (seconds or ms) is > ~1e9. Anything smaller is the
+  // ESP32's boot-uptime (millis) rather than a calendar time, so we don't show
+  // it as a date.
+  bool get hasValidTime => ts > 1000000000;
+
   // ts may be seconds (10 digits, from the Python backend) or milliseconds
   // (13 digits, from older writers). Normalise both to a real DateTime.
   DateTime get time => DateTime.fromMillisecondsSinceEpoch(

@@ -3,7 +3,7 @@ import "package:intl/intl.dart";
 
 import "../models/vitals.dart";
 import "../services/database_service.dart";
-import "../services/geocoding_service.dart";
+import "../widgets/location_view.dart";
 
 /// Live status: current heart rate / SpO2, connection freshness, and a big red
 /// banner when a fall alert is active.
@@ -131,15 +131,20 @@ class HomeScreen extends StatelessWidget {
                           leading: const Icon(Icons.access_time),
                           title: Text("Status: ${_friendlyStatus(v.status)}"),
                           subtitle: Text(
-                            "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}",
+                            v.hasValidTime
+                                ? "Updated ${DateFormat.yMMMd().add_jms().format(v.time)}"
+                                : "Receiving live data",
                           ),
                         ),
                         ListTile(
-                          leading: const Icon(Icons.location_on),
+                          leading: Icon(
+                            Icons.location_on,
+                            color: v.hasGps ? null : Colors.grey,
+                          ),
                           title: const Text("Location"),
                           subtitle: v.hasGps
-                              ? _LocationText(lat: v.lat, lng: v.lng)
-                              : const Text("No GPS fix yet"),
+                              ? LocationView(lat: v.lat, lng: v.lng)
+                              : const Text("Acquiring GPS signal…"),
                         ),
                       ],
                     ),
@@ -208,28 +213,3 @@ String _friendlyStatus(String s) {
   return s;
 }
 
-/// Location row: reverse-geocodes the coordinates to a place name, and shows
-/// it as "Place name (longitude: x, latitude: y)". Falls back to coordinates
-/// only while loading or if the lookup fails.
-class _LocationText extends StatelessWidget {
-  final double lat;
-  final double lng;
-  const _LocationText({required this.lat, required this.lng});
-
-  String get _coords =>
-      "(longitude: ${lng.toStringAsFixed(5)}, latitude: ${lat.toStringAsFixed(5)})";
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: GeocodingService.reverseGeocode(lat, lng),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return Text("Locating…  $_coords");
-        }
-        final name = snap.data;
-        return Text(name != null ? "$name\n$_coords" : _coords);
-      },
-    );
-  }
-}
