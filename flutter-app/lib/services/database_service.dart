@@ -61,29 +61,34 @@ class DatabaseService {
   ///   * fall_events  (what the current backend writes)
   /// so both historical and new falls appear in one list.
   Stream<List<FallEvent>> falls({int limit = 100}) {
-    final controller = StreamController<List<FallEvent>>();
     var fromFalls = <FallEvent>[];
     var fromEvents = <FallEvent>[];
+    StreamSubscription? sub1, sub2;
+    late StreamController<List<FallEvent>> controller;
 
     void emit() {
       final merged = [...fromFalls, ...fromEvents]
         ..sort((a, b) => b.ts.compareTo(a.ts)); // newest first
-      controller.add(merged);
+      if (!controller.isClosed) controller.add(merged);
     }
 
-    final sub1 = _fallsFrom("falls", limit).listen((v) {
-      fromFalls = v;
-      emit();
-    });
-    final sub2 = _fallsFrom("fall_events", limit).listen((v) {
-      fromEvents = v;
-      emit();
-    });
-
-    controller.onCancel = () {
-      sub1.cancel();
-      sub2.cancel();
-    };
+    // Broadcast + lazy start so repeated widget rebuilds can re-listen safely.
+    controller = StreamController<List<FallEvent>>.broadcast(
+      onListen: () {
+        sub1 = _fallsFrom("falls", limit).listen((v) {
+          fromFalls = v;
+          emit();
+        });
+        sub2 = _fallsFrom("fall_events", limit).listen((v) {
+          fromEvents = v;
+          emit();
+        });
+      },
+      onCancel: () {
+        sub1?.cancel();
+        sub2?.cancel();
+      },
+    );
     return controller.stream;
   }
 
