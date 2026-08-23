@@ -21,6 +21,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final DatabaseService _db = DatabaseService();
   DateTime? _selectedDay; // null = recent data (default)
 
+  bool get _selectedIsToday {
+    final d = _selectedDay;
+    if (d == null) return false;
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -64,7 +71,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
-                  if (_selectedDay != null)
+                  if (_selectedDay != null && !_selectedIsToday)
                     TextButton(
                       onPressed: () => setState(() => _selectedDay = null),
                       child: const Text("Recent"),
