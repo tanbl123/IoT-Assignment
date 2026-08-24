@@ -108,6 +108,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               }
               final avgHr = _avg(data.map((v) => v.hr));
               final avgSpo2 = _avg(data.map((v) => v.spo2));
+              final times = data.map((v) => v.time).toList();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -134,6 +135,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("Heart rate over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.hr.toDouble()),
+                    times: times,
                     color: Colors.red,
                     hardMin: 0,
                   ),
@@ -141,6 +143,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("SpO2 over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.spo2.toDouble()),
+                    times: times,
                     color: Colors.blue,
                     hardMin: 0,
                     hardMax: 100, // SpO2 can't exceed 100%
@@ -149,6 +152,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("Acceleration (motion) over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.accelG),
+                    times: times,
                     color: Colors.orange,
                     hardMin: 0,
                   ),
@@ -272,11 +276,13 @@ class _StatCard extends StatelessWidget {
 
 class _LineCard extends StatelessWidget {
   final List<FlSpot> spots;
+  final List<DateTime> times; // times[i] is the time for x == i
   final Color color;
   final double? hardMin; // never scale below this (e.g. 0)
   final double? hardMax; // never scale above this (e.g. 100 for SpO2)
   const _LineCard({
     required this.spots,
+    required this.times,
     required this.color,
     this.hardMin,
     this.hardMax,
@@ -329,8 +335,26 @@ class _LineCard extends StatelessWidget {
                     sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: times.length > 1,
+                    reservedSize: 26,
+                    interval: (times.length / 4).ceilToDouble().clamp(1, 100000),
+                    getTitlesWidget: (value, meta) {
+                      final i = value.round();
+                      if (i < 0 || i >= times.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          DateFormat.jm().format(times[i]),
+                          style: const TextStyle(fontSize: 9),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
