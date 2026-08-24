@@ -38,7 +38,9 @@ class FallDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageBytes = _decodeImage();
     // Keep the well-known fields (and the huge base64 image) out of the dump.
-    const shown = {"hr", "spo2", "lat", "lng", "ts", "status", "image"};
+    const shown = {
+      "hr", "spo2", "lat", "lng", "ts", "status", "image", "accel_g", "tilt"
+    };
     final extra = fall.raw.entries.where((e) => !shown.contains(e.key)).toList();
 
     return Scaffold(
@@ -134,6 +136,35 @@ class FallDetailScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+
+          // ---- impact (accelerometer) ----
+          if (fall.hasAccel || fall.hasTilt) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _InfoTile(
+                    icon: Icons.speed,
+                    color: Colors.deepOrange,
+                    label: "Impact force",
+                    value: fall.hasAccel
+                        ? "${fall.accelG.toStringAsFixed(1)} g"
+                        : "Not recorded",
+                  ),
+                ),
+                Expanded(
+                  child: _InfoTile(
+                    icon: Icons.screen_rotation,
+                    color: Colors.brown,
+                    label: "Body tilt",
+                    value: fall.hasTilt
+                        ? "${fall.tilt.toStringAsFixed(0)}°"
+                        : "Not recorded",
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // ---- location ----
           Card(

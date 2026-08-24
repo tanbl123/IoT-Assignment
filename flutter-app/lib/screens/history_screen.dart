@@ -176,7 +176,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         children: [
           Text(
             "HR ${f.hr >= 0 ? f.hr : '--'} bpm   •   "
-            "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%",
+            "SpO2 ${f.spo2 >= 0 ? f.spo2 : '--'}%"
+            "${f.hasAccel ? '   •   Impact ${f.accelG.toStringAsFixed(1)} g' : ''}",
           ),
           if (f.hasGps)
             Padding(

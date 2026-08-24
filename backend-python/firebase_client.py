@@ -221,7 +221,7 @@ def push_all_record(
     return event
 
 
-def push_fall_event(hr, spo2, lat, lng, image_path=""):
+def push_fall_event(hr, spo2, lat, lng, image_path="", accel_g=None, tilt=None):
     event = {
         "record_type": "FALL_CONFIRMED",
         "hr": hr,
@@ -232,6 +232,14 @@ def push_fall_event(hr, spo2, lat, lng, image_path=""):
         "status": "FALL_CONFIRMED",
         "image": _encode_thumbnail(image_path),  # base64 thumbnail for the app
     }
+
+    # Peak impact (accel_g) and body tilt at the moment of the fall, so the app
+    # can show how hard the impact was. Only stored when measured — leaving them
+    # out entirely keeps older records readable and the shape clean.
+    if accel_g is not None:
+        event["accel_g"] = round(float(accel_g), 2)
+    if tilt is not None:
+        event["tilt"] = round(float(tilt), 1)
 
     if _init():
         try:

@@ -488,6 +488,7 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
             last_vitals["lat"],
             last_vitals["lng"],
             image_path=debug_image_path,
+            accel_g=peak_accel,  # strongest impact G-force seen in the window
         )
 
         predicted_result = "FALL CONFIRMED"
