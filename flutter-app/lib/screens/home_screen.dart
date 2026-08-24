@@ -307,10 +307,9 @@ class _VitalTile extends StatelessWidget {
 }
 
 /// Turn a raw status string into something friendly for the caregiver.
+/// Everything that isn't a fall shows one stable label ("Monitoring") so the
+/// banner doesn't flicker when different writers use "OK" vs no status.
 String _friendlyStatus(String s) {
-  final u = s.trim().toUpperCase();
-  if (u.isEmpty || u == "UNKNOWN") return "Monitoring";
-  if (u == "OK") return "Normal";
-  if (u.contains("FALL")) return "Fall detected";
-  return s;
+  if (s.trim().toUpperCase().contains("FALL")) return "Fall detected";
+  return "Monitoring";
 }
