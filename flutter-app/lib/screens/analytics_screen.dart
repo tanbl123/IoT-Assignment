@@ -334,29 +334,6 @@ class _LineCard extends StatelessWidget {
     return 100;
   }
 
-  /// A "nice" time step (in ms) for the x-axis, so labels land on clean clock
-  /// times (e.g. every 10 min: 12:00, 12:10, 12:20) — evenly spaced and never
-  /// overlapping, because multiples of a minute-step align to real clock times.
-  static double _niceTimeStepMs(double spanMs) {
-    final min = spanMs / 60000.0; // span in minutes
-    double stepMin;
-    if (min <= 4) {
-      stepMin = 1;
-    } else if (min <= 12) {
-      stepMin = 2;
-    } else if (min <= 30) {
-      stepMin = 5;
-    } else if (min <= 70) {
-      stepMin = 10;
-    } else if (min <= 150) {
-      stepMin = 30;
-    } else if (min <= 400) {
-      stepMin = 60;
-    } else {
-      stepMin = 180;
-    }
-    return stepMin * 60000.0;
-  }
 
   /// Auto-fit the Y axis to the data, rounded to clean numbers so the axis
   /// labels are tidy (e.g. 50, 75, 100 — not 49.56, 235.4). Returns
@@ -405,7 +382,9 @@ class _LineCard extends StatelessWidget {
       if (s.x > maxX) maxX = s.x;
     }
     final xSpan = maxX - minX;
-    final xInterval = xSpan <= 0 ? 60000.0 : _niceTimeStepMs(xSpan);
+    // ~4 labels evenly spread across the data, whatever the window length —
+    // so short spans (e.g. 15 min or a few minutes) still get time labels.
+    final xInterval = xSpan <= 0 ? 60000.0 : xSpan / 4;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
