@@ -27,7 +27,7 @@ CRED_PATH = os.getenv("FIREBASE_CRED", "serviceAccountKey.json")
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
-    "https://fall-detection-ed1a9-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    "https://fall-detection-ed1a9-default-rtdb.asia-southeast1.firebasedatabase.app"
 )
 
 _initialized = False
@@ -38,7 +38,7 @@ _warned = False
 # snapshot is appended to all_records at most every NORMAL_RECORD_INTERVAL_SECONDS
 # so a ~20 Hz sensor stream doesn't flood the database.
 _last_normal_record_time = 0
-NORMAL_RECORD_INTERVAL_SECONDS = 5
+NORMAL_RECORD_INTERVAL_SECONDS = 1
 
 
 def _init():
