@@ -1,3 +1,5 @@
+import "dart:async";
+
 import "package:flutter/material.dart";
 import "package:intl/intl.dart";
 
@@ -7,36 +9,69 @@ import "../widgets/location_view.dart";
 
 /// Live status: a status hero, the current vitals/motion tiles, and location.
 /// A big red banner replaces the hero when a fall alert is active.
-class HomeScreen extends StatelessWidget {
+///
+/// Stateful so we can stamp the moment the app *received* each update and show
+/// that as the "Updated" time — the device's own timestamp is unreliable (two
+/// writers, one sends ESP32 uptime), which made the banner flicker.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final DatabaseService _db = DatabaseService();
+  StreamSubscription<Vitals?>? _sub;
+  Vitals? _vitals;
+  DateTime? _updatedAt;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = _db.latestVitals().listen((v) {
+      if (!mounted) return;
+      setState(() {
+        _vitals = v;
+        _updatedAt = DateTime.now();
+        _loaded = true;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final db = DatabaseService();
+    final v = _vitals;
     return Scaffold(
       appBar: AppBar(title: const Text("Live Status")),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
-          child: StreamBuilder<Vitals?>(
-            stream: db.latestVitals(),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
+          child: Builder(
+            builder: (context) {
+              if (!_loaded) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final v = snap.data;
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   // ---- status hero / alert banner ----
                   StreamBuilder<bool>(
-                    stream: db.alertActive(),
+                    stream: _db.alertActive(),
                     builder: (context, alertSnap) {
                       final alerting = alertSnap.data == true;
                       return _StatusHero(
                         vitals: v,
+                        updatedAt: _updatedAt,
                         alerting: alerting,
-                        onAcknowledge: db.clearAlert,
+                        onAcknowledge: _db.clearAlert,
                       );
                     },
                   ),
@@ -151,10 +186,12 @@ class HomeScreen extends StatelessWidget {
 /// Big banner at the top: green while normal, red while a fall alert is active.
 class _StatusHero extends StatelessWidget {
   final Vitals? vitals;
+  final DateTime? updatedAt;
   final bool alerting;
   final VoidCallback onAcknowledge;
   const _StatusHero({
     required this.vitals,
+    required this.updatedAt,
     required this.alerting,
     required this.onAcknowledge,
   });
@@ -176,10 +213,11 @@ class _StatusHero extends StatelessWidget {
 
     final v = vitals;
     final connecting = v == null;
+    // Use the app's own receive time, not the device timestamp (unreliable).
     final subtitle = connecting
         ? "Connecting to the device…"
-        : (v.hasValidTime
-            ? "Updated ${DateFormat.jm().format(v.time)}"
+        : (updatedAt != null
+            ? "Updated ${DateFormat.jm().format(updatedAt!)}"
             : "Receiving live data");
 
     return _shell(
