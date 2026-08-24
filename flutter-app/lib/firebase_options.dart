@@ -17,9 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web...'
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -58,5 +56,15 @@ class DefaultFirebaseOptions {
     projectId: 'fall-detection-ed1a9',
     databaseURL: 'https://fall-detection-ed1a9-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'fall-detection-ed1a9.firebasestorage.app',
+  );
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyAiAunnABfV2T6BUKaakzabCNF5WkNKh50',
+    appId: '1:512121070896:web:d2da7073047c4c79d954f5',
+    messagingSenderId: '512121070896',
+    projectId: 'fall-detection-ed1a9',
+    authDomain: 'fall-detection-ed1a9.firebaseapp.com',
+    databaseURL: 'https://fall-detection-ed1a9-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'fall-detection-ed1a9.firebasestorage.app',
+    measurementId: 'G-26LHLF6JHZ',
   );
 }
