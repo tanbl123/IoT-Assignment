@@ -19,14 +19,8 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final DatabaseService _db = DatabaseService();
-  DateTime? _selectedDay; // null = recent data (default)
-
-  bool get _selectedIsToday {
-    final d = _selectedDay;
-    if (d == null) return false;
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
+  String _mode = "all"; // all | 15m | 1h | 6h | date
+  DateTime? _selectedDay; // used when _mode == "date"
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
@@ -36,16 +30,93 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       firstDate: DateTime(2024),
       lastDate: now,
     );
-    if (picked != null) setState(() => _selectedDay = picked);
+    if (picked != null) {
+      setState(() {
+        _selectedDay = picked;
+        _mode = "date";
+      });
+    }
   }
 
-  List<Vitals> _filterByDay(List<Vitals> data) {
-    final d = _selectedDay;
-    if (d == null) return data;
-    return data.where((v) {
-      final t = v.time;
-      return t.year == d.year && t.month == d.month && t.day == d.day;
-    }).toList();
+  /// Filter readings by the selected window (relative to now) or a specific day.
+  List<Vitals> _filter(List<Vitals> data) {
+    final now = DateTime.now();
+    switch (_mode) {
+      case "15m":
+        return data
+            .where((v) => now.difference(v.time) <= const Duration(minutes: 15))
+            .toList();
+      case "1h":
+        return data
+            .where((v) => now.difference(v.time) <= const Duration(hours: 1))
+            .toList();
+      case "6h":
+        return data
+            .where((v) => now.difference(v.time) <= const Duration(hours: 6))
+            .toList();
+      case "date":
+        final d = _selectedDay;
+        if (d == null) return data;
+        return data.where((v) {
+          final t = v.time;
+          return t.year == d.year && t.month == d.month && t.day == d.day;
+        }).toList();
+      default:
+        return data;
+    }
+  }
+
+  String get _emptyMsg {
+    switch (_mode) {
+      case "15m":
+        return "No readings in the last 15 minutes.";
+      case "1h":
+        return "No readings in the last hour.";
+      case "6h":
+        return "No readings in the last 6 hours.";
+      case "date":
+        return _selectedDay == null
+            ? "No readings for the selected day."
+            : "No readings recorded on "
+                "${DateFormat.yMMMEd().format(_selectedDay!)}.";
+      default:
+        return "No health data yet.\n"
+            "Charts will appear here once the device starts recording readings.";
+    }
+  }
+
+  Widget _rangeBar() {
+    Widget chip(String label, String mode) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: _mode == mode,
+            onSelected: (_) => setState(() => _mode = mode),
+          ),
+        );
+    final dateLabel = _mode == "date" && _selectedDay != null
+        ? DateFormat.MMMd().format(_selectedDay!)
+        : "Pick a date";
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          chip("All", "all"),
+          chip("15 min", "15m"),
+          chip("1 hour", "1h"),
+          chip("6 hours", "6h"),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              avatar: const Icon(Icons.calendar_today, size: 16),
+              label: Text(dateLabel),
+              selected: _mode == "date",
+              onSelected: (_) => _pickDate(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -58,35 +129,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-          // ---------- Date selector ----------
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _selectedDay == null
-                          ? "Showing: recent data"
-                          : "Showing: ${DateFormat.yMMMEd().format(_selectedDay!)}",
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                  if (_selectedDay != null && !_selectedIsToday)
-                    TextButton(
-                      onPressed: () => setState(() => _selectedDay = null),
-                      child: const Text("Recent"),
-                    ),
-                  FilledButton.tonal(
-                    onPressed: _pickDate,
-                    child: const Text("Pick a date"),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // ---------- Time range selector ----------
+          _rangeBar(),
           const SizedBox(height: 12),
 
           // ---------- Vitals section ----------
@@ -96,15 +140,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               if (snap.connectionState == ConnectionState.waiting) {
                 return const _Loading();
               }
-              final data = _filterByDay(snap.data ?? []);
+              final data = _filter(snap.data ?? []);
               if (data.isEmpty) {
-                return _EmptyCard(
-                  _selectedDay == null
-                      ? "No health data yet.\n"
-                          "Charts will appear here once the device starts recording readings."
-                      : "No readings recorded on "
-                          "${DateFormat.yMMMEd().format(_selectedDay!)}.",
-                );
+                return _EmptyCard(_emptyMsg);
               }
               final avgHr = _avg(data.map((v) => v.hr));
               final avgSpo2 = _avg(data.map((v) => v.spo2));
