@@ -282,27 +282,38 @@ class _LineCard extends StatelessWidget {
     this.hardMax,
   });
 
-  /// Auto-fit the Y axis to the data (with padding) so spikes are never clipped.
-  (double, double) _range() {
-    if (spots.isEmpty) return (0, 1);
+  /// A "nice" step size for the axis given the data span.
+  static double _niceStep(double span) {
+    if (span <= 10) return 2;
+    if (span <= 25) return 5;
+    if (span <= 60) return 10;
+    if (span <= 150) return 25;
+    if (span <= 300) return 50;
+    return 100;
+  }
+
+  /// Auto-fit the Y axis to the data, rounded to clean numbers so the axis
+  /// labels are tidy (e.g. 50, 75, 100 — not 49.56, 235.4). Returns
+  /// (minY, maxY, interval).
+  (double, double, double) _range() {
+    if (spots.isEmpty) return (0, 1, 1);
     var lo = spots.first.y, hi = spots.first.y;
     for (final s in spots) {
       if (s.y < lo) lo = s.y;
       if (s.y > hi) hi = s.y;
     }
-    final span = hi - lo;
-    final pad = span < 1 ? 5.0 : span * 0.15;
-    lo -= pad;
-    hi += pad;
+    final step = _niceStep(hi - lo);
+    lo = (lo / step).floorToDouble() * step;
+    hi = (hi / step).ceilToDouble() * step;
     if (hardMin != null && lo < hardMin!) lo = hardMin!;
     if (hardMax != null && hi > hardMax!) hi = hardMax!;
-    if (lo >= hi) hi = lo + 1; // guard against a flat/zero range
-    return (lo, hi);
+    if (lo >= hi) hi = lo + step; // guard against a flat/zero range
+    return (lo, hi, step);
   }
 
   @override
   Widget build(BuildContext context) {
-    final (minY, maxY) = _range();
+    final (minY, maxY, interval) = _range();
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
@@ -312,13 +323,28 @@ class _LineCard extends StatelessWidget {
             LineChartData(
               minY: minY,
               maxY: maxY,
-              gridData: const FlGridData(show: true),
-              titlesData: const FlTitlesData(
-                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles:
-                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles:
-                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              gridData: FlGridData(show: true, horizontalInterval: interval),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: interval,
+                    reservedSize: 40,
+                    getTitlesWidget: (value, meta) => Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text(
+                        value.toStringAsFixed(0),
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
               ),
               borderData: FlBorderData(show: false),
               lineBarsData: [
