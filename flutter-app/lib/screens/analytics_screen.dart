@@ -373,6 +373,22 @@ class _LineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No valid points for this metric in the selected window — show a message
+    // instead of an empty 0–1 axis (e.g. readings exist but HR/SpO2 were -1).
+    if (spots.isEmpty) {
+      return Card(
+        child: SizedBox(
+          height: 180,
+          child: Center(
+            child: Text(
+              "No readings in this period.",
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+        ),
+      );
+    }
+
     final (minY, maxY, interval) = _range();
     // X axis = time (ms since epoch).
     var minX = spots.isEmpty ? 0.0 : spots.first.x;
