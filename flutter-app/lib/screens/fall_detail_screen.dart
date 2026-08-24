@@ -138,30 +138,12 @@ class FallDetailScreen extends StatelessWidget {
           const SizedBox(height: 8),
 
           // ---- impact (accelerometer) ----
-          if (fall.hasAccel || fall.hasTilt) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: _InfoTile(
-                    icon: Icons.speed,
-                    color: Colors.deepOrange,
-                    label: "Impact force",
-                    value: fall.hasAccel
-                        ? "${fall.accelG.toStringAsFixed(1)} g"
-                        : "Not recorded",
-                  ),
-                ),
-                Expanded(
-                  child: _InfoTile(
-                    icon: Icons.screen_rotation,
-                    color: Colors.brown,
-                    label: "Body tilt",
-                    value: fall.hasTilt
-                        ? "${fall.tilt.toStringAsFixed(0)}°"
-                        : "Not recorded",
-                  ),
-                ),
-              ],
+          if (fall.hasAccel) ...[
+            _InfoTile(
+              icon: Icons.speed,
+              color: Colors.deepOrange,
+              label: "Impact force",
+              value: "${fall.accelG.toStringAsFixed(1)} g",
             ),
             const SizedBox(height: 8),
           ],
