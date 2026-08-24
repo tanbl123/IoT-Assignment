@@ -108,7 +108,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               }
               final avgHr = _avg(data.map((v) => v.hr));
               final avgSpo2 = _avg(data.map((v) => v.spo2));
-              final times = data.map((v) => v.time).toList();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -135,7 +134,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("Heart rate over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.hr.toDouble()),
-                    times: times,
                     color: Colors.red,
                     hardMin: 0,
                   ),
@@ -143,7 +141,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("SpO2 over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.spo2.toDouble()),
-                    times: times,
                     color: Colors.blue,
                     hardMin: 0,
                     hardMax: 100, // SpO2 can't exceed 100%
@@ -152,7 +149,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _SectionTitle("Acceleration (motion) over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.accelG),
-                    times: times,
                     color: Colors.orange,
                     hardMin: 0,
                   ),
@@ -208,11 +204,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return valid.reduce((a, b) => a + b) / valid.length;
   }
 
+  /// Plot each reading at its real time on the x-axis (milliseconds since
+  /// epoch) so gaps and bursts are shown accurately — not evenly by count.
   static List<FlSpot> _spots(List<Vitals> data, double Function(Vitals) y) {
     final spots = <FlSpot>[];
-    for (var i = 0; i < data.length; i++) {
-      final val = y(data[i]);
-      if (val >= 0) spots.add(FlSpot(i.toDouble(), val));
+    for (final v in data) {
+      final val = y(v);
+      if (val >= 0) {
+        spots.add(FlSpot(v.time.millisecondsSinceEpoch.toDouble(), val));
+      }
     }
     return spots;
   }
@@ -275,14 +275,12 @@ class _StatCard extends StatelessWidget {
 }
 
 class _LineCard extends StatelessWidget {
-  final List<FlSpot> spots;
-  final List<DateTime> times; // times[i] is the time for x == i
+  final List<FlSpot> spots; // x = time in ms since epoch, y = value
   final Color color;
   final double? hardMin; // never scale below this (e.g. 0)
   final double? hardMax; // never scale above this (e.g. 100 for SpO2)
   const _LineCard({
     required this.spots,
-    required this.times,
     required this.color,
     this.hardMin,
     this.hardMax,
@@ -317,9 +315,35 @@ class _LineCard extends StatelessWidget {
     return (lo, hi, step);
   }
 
+  /// Split the points into separate line segments wherever there's a time gap
+  /// bigger than [gapMs] (the device was off) — so we don't draw a misleading
+  /// straight line across a period when nothing was recorded.
+  List<List<FlSpot>> _segments({double gapMs = 60000}) {
+    final segs = <List<FlSpot>>[];
+    var cur = <FlSpot>[];
+    for (final s in spots) {
+      if (cur.isNotEmpty && s.x - cur.last.x > gapMs) {
+        segs.add(cur);
+        cur = [];
+      }
+      cur.add(s);
+    }
+    if (cur.isNotEmpty) segs.add(cur);
+    return segs;
+  }
+
   @override
   Widget build(BuildContext context) {
     final (minY, maxY, interval) = _range();
+    // X axis = time (ms since epoch).
+    var minX = spots.isEmpty ? 0.0 : spots.first.x;
+    var maxX = spots.isEmpty ? 1.0 : spots.first.x;
+    for (final s in spots) {
+      if (s.x < minX) minX = s.x;
+      if (s.x > maxX) maxX = s.x;
+    }
+    final xSpan = maxX - minX;
+    final xInterval = xSpan <= 0 ? 1.0 : xSpan / 4;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
@@ -327,9 +351,15 @@ class _LineCard extends StatelessWidget {
           height: 180,
           child: LineChart(
             LineChartData(
+              minX: minX,
+              maxX: maxX,
               minY: minY,
               maxY: maxY,
-              gridData: FlGridData(show: true, horizontalInterval: interval),
+              gridData: FlGridData(
+                show: true,
+                horizontalInterval: interval,
+                verticalInterval: xInterval,
+              ),
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false)),
@@ -337,18 +367,17 @@ class _LineCard extends StatelessWidget {
                     sideTitles: SideTitles(showTitles: false)),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
-                    showTitles: times.length > 1,
+                    showTitles: spots.length > 1,
                     reservedSize: 26,
-                    interval: (times.length / 4).ceilToDouble().clamp(1, 100000),
+                    interval: xInterval,
                     getTitlesWidget: (value, meta) {
-                      final i = value.round();
-                      if (i < 0 || i >= times.length) {
-                        return const SizedBox.shrink();
-                      }
+                      final dt = DateTime.fromMillisecondsSinceEpoch(
+                        value.toInt(),
+                      );
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          DateFormat.jm().format(times[i]),
+                          DateFormat.jm().format(dt),
                           style: const TextStyle(fontSize: 9),
                         ),
                       );
@@ -372,17 +401,22 @@ class _LineCard extends StatelessWidget {
               ),
               borderData: FlBorderData(show: false),
               lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: true,
-                  color: color,
-                  barWidth: 2,
-                  dotData: const FlDotData(show: false),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    color: color.withOpacity(0.12),
+                // one line per continuous run — gaps (device off) are not joined
+                for (final seg in _segments())
+                  LineChartBarData(
+                    spots: seg,
+                    isCurved: false,
+                    color: color,
+                    barWidth: 2,
+                    dotData: FlDotData(
+                      // show a dot for an isolated single reading so it's visible
+                      show: seg.length == 1,
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: color.withOpacity(0.12),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

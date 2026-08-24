@@ -14,6 +14,12 @@ from __future__ import annotations
 
 import os
 import time
+import base64
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 try:
     import firebase_admin
@@ -21,6 +27,34 @@ try:
     _HAVE_FIREBASE = True
 except ImportError:
     _HAVE_FIREBASE = False
+
+
+def _encode_thumbnail(image_path, max_w=240, quality=45):
+    """Read a saved fall image, shrink it, and return a base64 data URI string.
+
+    The Realtime Database stores text, not files — and the free Spark plan
+    can't use Firebase Storage — so we embed a small compressed thumbnail as
+    a base64 string the app can decode and display. Returns "" on any problem
+    (missing file, no OpenCV) so the fall event still saves without an image.
+    """
+    if not image_path or cv2 is None or not os.path.exists(image_path):
+        return ""
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            return ""
+        h, w = img.shape[:2]
+        if w > max_w:
+            scale = max_w / float(w)
+            img = cv2.resize(img, (max_w, int(h * scale)))
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ok:
+            return ""
+        b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+        return "data:image/jpeg;base64," + b64
+    except Exception as e:
+        print(f"[firebase] thumbnail encode failed: {e}")
+        return ""
 
 
 CRED_PATH = os.getenv("FIREBASE_CRED", "serviceAccountKey.json")
@@ -187,7 +221,7 @@ def push_all_record(
     return event
 
 
-def push_fall_event(hr, spo2, lat, lng):
+def push_fall_event(hr, spo2, lat, lng, image_path=""):
     event = {
         "record_type": "FALL_CONFIRMED",
         "hr": hr,
@@ -196,6 +230,7 @@ def push_fall_event(hr, spo2, lat, lng):
         "lng": lng,
         "ts": _now_ts(),
         "status": "FALL_CONFIRMED",
+        "image": _encode_thumbnail(image_path),  # base64 thumbnail for the app
     }
 
     if _init():

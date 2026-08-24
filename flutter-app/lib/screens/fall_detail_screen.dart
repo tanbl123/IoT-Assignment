@@ -1,3 +1,6 @@
+import "dart:convert";
+import "dart:typed_data";
+
 import "package:flutter/material.dart";
 import "package:intl/intl.dart";
 import "package:url_launcher/url_launcher.dart";
@@ -19,10 +22,23 @@ class FallDetailScreen extends StatelessWidget {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  /// Decode the base64 fall snapshot into bytes, or null if none/invalid.
+  Uint8List? _decodeImage() {
+    if (!fall.hasImage) return null;
+    try {
+      final s = fall.image;
+      final comma = s.indexOf(","); // strip "data:image/jpeg;base64,"
+      return base64Decode(comma >= 0 ? s.substring(comma + 1) : s);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Keep the well-known fields out of the "all data" dump (shown above).
-    const shown = {"hr", "spo2", "lat", "lng", "ts", "status"};
+    final imageBytes = _decodeImage();
+    // Keep the well-known fields (and the huge base64 image) out of the dump.
+    const shown = {"hr", "spo2", "lat", "lng", "ts", "status", "image"};
     final extra = fall.raw.entries.where((e) => !shown.contains(e.key)).toList();
 
     return Scaffold(
@@ -63,6 +79,38 @@ class FallDetailScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+
+          // ---- fall snapshot image ----
+          if (imageBytes != null) ...[
+            Card(
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Image.memory(
+                    imageBytes,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text("Snapshot could not be displayed."),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text(
+                      "Camera snapshot at the moment of the fall",
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // ---- vitals ----
           Row(

@@ -487,6 +487,7 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
             spo2,
             last_vitals["lat"],
             last_vitals["lng"],
+            image_path=debug_image_path,
         )
 
         predicted_result = "FALL CONFIRMED"
