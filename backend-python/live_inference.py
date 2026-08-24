@@ -1,30 +1,22 @@
 """
-REAL IoT live fall-confirmation loop.
+REAL IoT live fall-confirmation loop — FIREBASE MODE.
 
 Flow:
-1. Read real JSON lines from ESP32 sensor node through serial.
-2. Buffer real motion data.
-3. Read HR and SpO2 from sensor JSON.
-4. Save normal telemetry into Firebase all_records.
-5. When fall_suspected is received, capture frames from ESP32-CAM.
-6. Save raw frames and processed_detection.jpg.
-7. Extract motion + image features.
-8. Check camera posture: lying down / not lying / unclear.
-9. Run Random Forest model.
-10. Final decision:
-    - ML says fall
-    - camera says lying
-    - impact is strong enough
-    = FALL CONFIRMED
-11. Save live IoT prediction result to CSV and Excel.
-12. Save every detection result into Firebase all_records.
-13. If confirmed, save into Firebase fall_events and update state/confirmed = true.
-14. Actuator ESP32 reads Firebase and triggers buzzer/OLED/vibration.
+1. Sensor ESP32 sends telemetry/latest and state/suspected to Firebase.
+2. Python reads Firebase instead of COM7 Serial.
+3. When state/suspected has a new fall_suspected event, Python captures ESP32-CAM frames.
+4. Python extracts motion + image features.
+5. Random Forest predicts fall probability.
+6. Final decision requires:
+   - ML says fall
+   - camera says lying
+   - impact is strong enough
+7. Python writes all_records, fall_events, and state/confirmed.
+8. Actuator ESP32 reads state/confirmed and triggers buzzer/OLED/vibration.
 """
 
 from __future__ import annotations
 
-import json
 import time
 import os
 import csv
@@ -41,8 +33,8 @@ import firebase_client
 
 # ===================== CONFIG =====================
 
-SERIAL_PORT = "COM7"
-BAUD = 115200
+# COM7 is no longer needed in Firebase mode.
+USE_FIREBASE_MODE = True
 
 # Plain URL only. No [ ], no markdown, no parentheses.
 CAM_URL = "http://10.214.169.191/capture"
@@ -64,14 +56,15 @@ CAMERA_REQUIRED = True
 REQUIRE_CAMERA_LYING_CONFIRMATION = True
 REQUIRE_IMPACT_CONFIRMATION = True
 
+FIREBASE_TELEMETRY_PATH = "telemetry/latest"
+FIREBASE_SUSPECTED_PATH = "state/suspected"
+
+POLL_INTERVAL_SECONDS = 0.5
+
+NORMAL_RECORD_INTERVAL_SECONDS = 1
+
 # ==================================================
 
-
-try:
-    import serial
-    import serial.tools.list_ports
-except ImportError:
-    serial = None
 
 try:
     import cv2
@@ -81,21 +74,10 @@ except ImportError:
     requests = None
 
 
-def show_available_ports():
-    if serial is None:
-        return
+_last_normal_record_time = 0
 
-    ports = list(serial.tools.list_ports.comports())
 
-    print("\nAvailable COM ports:")
-
-    if not ports:
-        print("  No COM ports found.")
-        return
-
-    for port in ports:
-        print(f"  {port.device} - {port.description}")
-
+# ===================== BASIC HELPERS =====================
 
 def validate_config():
     if "[" in CAM_URL or "]" in CAM_URL or "(" in CAM_URL or ")" in CAM_URL:
@@ -126,32 +108,180 @@ def load_model():
     return bundle["model"]
 
 
-def open_serial():
-    if serial is None:
-        raise SystemExit(
-            "[error] pyserial not installed.\n"
-            "Run:\n"
-            "pip install pyserial"
-        )
-
+def safe_int(value, default=-1):
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD, timeout=1)
-        time.sleep(2)
-        print(f"[serial] connected to {SERIAL_PORT} at {BAUD}")
-        return ser
+        if value is None:
+            return default
+
+        return int(float(value))
+
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_float(value, default=0.0):
+    try:
+        if value is None:
+            return default
+
+        return float(value)
+
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_bool(value):
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return value != 0
+
+    if isinstance(value, str):
+        return value.strip().lower() in ["true", "1", "yes", "y"]
+
+    return False
+
+
+def now_ts():
+    return int(time.time())
+
+
+# ===================== FIREBASE HELPERS =====================
+
+def firebase_get(path):
+    """
+    Read a Firebase Realtime Database path.
+    Uses firebase_client.py.
+    """
+    try:
+        if hasattr(firebase_client, "read_path"):
+            return firebase_client.read_path(path)
+
+        if not firebase_client._init():
+            return None
+
+        return firebase_client.db.reference(path).get()
 
     except Exception as e:
-        show_available_ports()
-        raise SystemExit(
-            f"\n[error] could not open {SERIAL_PORT}: {e}\n\n"
-            "Fix:\n"
-            "1. Plug in the SENSOR ESP32.\n"
-            "2. Close Arduino Serial Monitor.\n"
-            "3. Check Arduino IDE > Tools > Port.\n"
-            "4. Update SERIAL_PORT in live_inference.py.\n"
-            "5. Or run: python -m serial.tools.list_ports"
+        print(f"[firebase read error] {path}: {e}")
+        return None
+
+
+def firebase_set(path, value):
+    try:
+        if not firebase_client._init():
+            return False
+
+        firebase_client.db.reference(path).set(value)
+        return True
+
+    except Exception as e:
+        print(f"[firebase write error] {path}: {e}")
+        return False
+
+
+def append_normal_record_only(pkt):
+    """
+    Save normal telemetry into all_records without overwriting telemetry/latest.
+
+    Important:
+    Sensor ESP32 owns telemetry/latest.
+    Python should not overwrite it, because it contains GPS fix/sats/lat/lng.
+    """
+    global _last_normal_record_time
+
+    current_time = time.time()
+
+    if current_time - _last_normal_record_time < NORMAL_RECORD_INTERVAL_SECONDS:
+        return
+
+    payload = {
+        "record_type": "NORMAL_TELEMETRY",
+        "node": "python_backend_history",
+        "hr": safe_int(pkt.get("hr", -1), -1),
+        "spo2": safe_int(pkt.get("spo2", -1), -1),
+        "status": "NORMAL",
+        "accel_g": safe_float(pkt.get("accel_g", 0.0), 0.0),
+        "tilt": safe_float(pkt.get("tilt", 0.0), 0.0),
+        "lat": safe_float(pkt.get("lat", 0.0), 0.0),
+        "lng": safe_float(pkt.get("lng", 0.0), 0.0),
+        "fix": safe_bool(pkt.get("fix", False)),
+        "has_last_fix": safe_bool(pkt.get("has_last_fix", pkt.get("fix", False))),
+        "sats": safe_int(pkt.get("sats", 0), 0),
+        "gps_chars": safe_int(pkt.get("gps_chars", -1), -1),
+        "gps_age_ms": safe_int(pkt.get("gps_age_ms", -1), -1),
+        "ts": now_ts(),
+    }
+
+    try:
+        if not firebase_client._init():
+            return
+
+        firebase_client.db.reference("all_records").push(payload)
+        firebase_client.db.reference("all_records_latest").set(payload)
+
+        _last_normal_record_time = current_time
+
+        print("[firebase] normal telemetry saved to all_records")
+
+    except Exception as e:
+        print(f"[firebase error] normal telemetry save failed: {e}")
+
+
+def push_fall_event_safe(hr, spo2, lat, lng, image_path="", accel_g=None):
+    """
+    Supports all versions of firebase_client.py:
+    - push_fall_event(hr, spo2, lat, lng)
+    - push_fall_event(hr, spo2, lat, lng, image_path="")
+    - push_fall_event(hr, spo2, lat, lng, image_path="", accel_g=None)
+    """
+    try:
+        return firebase_client.push_fall_event(
+            hr,
+            spo2,
+            lat,
+            lng,
+            image_path=image_path if image_path else "",
+            accel_g=accel_g,
         )
 
+    except TypeError:
+        try:
+            return firebase_client.push_fall_event(
+                hr,
+                spo2,
+                lat,
+                lng,
+                image_path=image_path if image_path else "",
+            )
+
+        except TypeError:
+            return firebase_client.push_fall_event(
+                hr,
+                spo2,
+                lat,
+                lng,
+            )
+
+
+def test_firebase_connection():
+    print("[firebase] testing read access...")
+
+    test_data = firebase_get(FIREBASE_TELEMETRY_PATH)
+
+    if test_data is None:
+        print("[firebase warning] telemetry/latest is empty or Firebase read failed.")
+        print("[firebase warning] Make sure:")
+        print("  1. serviceAccountKey.json is inside backend-python folder")
+        print("  2. FIREBASE_DB_URL is correct")
+        print("  3. Sensor ESP32 already uploaded telemetry/latest")
+    else:
+        print("[firebase] read OK")
+        print("[firebase] latest telemetry:", test_data)
+
+
+# ===================== CAMERA HELPERS =====================
 
 def test_camera_once():
     if cv2 is None or requests is None:
@@ -248,29 +378,7 @@ def save_fall_frames(frames):
     return event_dir
 
 
-def serial_packets(ser):
-    while True:
-        raw = ser.readline().decode(errors="ignore").strip()
-
-        if not raw:
-            continue
-
-        try:
-            yield json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-
-
-def safe_int(value, default=-1):
-    try:
-        if value is None:
-            return default
-
-        return int(float(value))
-
-    except (ValueError, TypeError):
-        return default
-
+# ===================== CLASSIFICATION HELPERS =====================
 
 def classify_vitals(hr, spo2):
     hr_status = "UNKNOWN" if hr == -1 else "DETECTED"
@@ -302,6 +410,35 @@ def classify_camera_posture(feature_report):
     return "NOT LYING / UNCLEAR POSTURE", False
 
 
+def print_gps_status(pkt):
+    lat = safe_float(pkt.get("lat", 0.0), 0.0)
+    lng = safe_float(pkt.get("lng", 0.0), 0.0)
+
+    gps_chars = safe_int(pkt.get("gps_chars", -1), -1)
+    gps_fix = safe_bool(pkt.get("fix", False))
+    has_last_fix = safe_bool(pkt.get("has_last_fix", pkt.get("fix", False)))
+    sats = safe_int(pkt.get("sats", 0), 0)
+    gps_age_ms = safe_int(pkt.get("gps_age_ms", -1), -1)
+
+    if lat != 0.0 and lng != 0.0:
+        location_text = "LOCATION OK"
+    else:
+        location_text = "NO LOCATION YET"
+
+    print(
+        f"[gps] {location_text} | "
+        f"chars={gps_chars} | "
+        f"fix={'YES' if gps_fix else 'NO'} | "
+        f"last_fix={'YES' if has_last_fix else 'NO'} | "
+        f"sats={sats} | "
+        f"age={gps_age_ms}ms | "
+        f"lat={lat:.6f} | "
+        f"lng={lng:.6f}"
+    )
+
+
+# ===================== LOGGING =====================
+
 def save_live_iot_result(
     event_dir,
     processed_image_path,
@@ -317,6 +454,8 @@ def save_live_iot_result(
     hr_status,
     spo2,
     spo2_status,
+    lat,
+    lng,
 ):
     file_exists = os.path.exists(LIVE_RESULT_CSV)
 
@@ -327,6 +466,9 @@ def save_live_iot_result(
         "hr_status": hr_status,
         "spo2": spo2,
         "spo2_status": spo2_status,
+
+        "lat": lat,
+        "lng": lng,
 
         "event_folder": event_dir if event_dir else "",
         "processed_image": processed_image_path if processed_image_path else "",
@@ -371,16 +513,56 @@ def save_live_iot_result(
         print(f"[log warning] CSV saved, but Excel export failed: {e}")
 
 
+# ===================== FIREBASE PACKET NORMALIZATION =====================
+
+def normalize_firebase_packet(data, packet_type):
+    """
+    Convert Firebase JSON into packet format.
+    Also includes GPS fields for checking GPS status.
+    """
+    if not isinstance(data, dict):
+        return None
+
+    pkt = {
+        "type": packet_type,
+        "accel_g": safe_float(data.get("accel_g", 1.0), 1.0),
+        "tilt": safe_float(data.get("tilt", 0.0), 0.0),
+
+        "hr": safe_int(data.get("hr", -1), -1),
+        "spo2": safe_int(data.get("spo2", -1), -1),
+
+        "lat": safe_float(data.get("lat", 0.0), 0.0),
+        "lng": safe_float(data.get("lng", 0.0), 0.0),
+
+        "gps_chars": safe_int(data.get("gps_chars", -1), -1),
+        "fix": safe_bool(data.get("fix", False)),
+        "has_last_fix": safe_bool(data.get("has_last_fix", data.get("fix", False))),
+        "sats": safe_int(data.get("sats", 0), 0),
+        "gps_age_ms": safe_int(data.get("gps_age_ms", -1), -1),
+
+        "ts": data.get("ts"),
+        "event": data.get("event"),
+    }
+
+    return pkt
+
+
+# ===================== MAIN PROCESSING =====================
+
 def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
-    g = float(pkt.get("accel_g", 1.0))
-    tilt = float(pkt.get("tilt", 0.0))
+    g = safe_float(pkt.get("accel_g", 1.0), 1.0)
+    tilt = safe_float(pkt.get("tilt", 0.0), 0.0)
 
     hr = safe_int(pkt.get("hr", -1), default=-1)
     spo2 = safe_int(pkt.get("spo2", -1), default=-1)
 
+    lat = safe_float(pkt.get("lat", last_vitals["lat"]), last_vitals["lat"])
+    lng = safe_float(pkt.get("lng", last_vitals["lng"]), last_vitals["lng"])
+
     hr_status, spo2_status, hr_display, spo2_display = classify_vitals(hr, spo2)
 
     print(f"[vitals] HR={hr_display} | SpO2={spo2_display}")
+    print_gps_status(pkt)
 
     accel_buf.append([g / np.sqrt(3)] * 3)
     tilt_buf.append(tilt)
@@ -388,19 +570,20 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     last_vitals.update({
         "hr": hr,
         "spo2": spo2,
-        "lat": pkt.get("lat", last_vitals["lat"]),
-        "lng": pkt.get("lng", last_vitals["lng"]),
+        "lat": lat,
+        "lng": lng,
+        "gps_chars": safe_int(pkt.get("gps_chars", -1), -1),
+        "gps_fix": safe_bool(pkt.get("fix", False)),
+        "has_last_fix": safe_bool(pkt.get("has_last_fix", pkt.get("fix", False))),
+        "sats": safe_int(pkt.get("sats", 0), 0),
+        "gps_age_ms": safe_int(pkt.get("gps_age_ms", -1), -1),
     })
 
-    firebase_client.push_telemetry(
-        hr=hr,
-        spo2=spo2,
-        status="NORMAL",
-        accel_g=g,
-        tilt=tilt,
-        lat=last_vitals["lat"],
-        lng=last_vitals["lng"],
-    )
+    # In Firebase mode, do NOT call firebase_client.push_telemetry()
+    # because that would overwrite telemetry/latest and remove GPS fields.
+    if pkt.get("type") == "telemetry":
+        append_normal_record_only(pkt)
+        return
 
     if pkt.get("type") != "fall_suspected":
         return
@@ -410,9 +593,10 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
         return
 
     print("\n================ FALL SUSPECTED ================")
-    print("[stage-2] real fall_suspected received from ESP32 sensor")
+    print("[stage-2] real fall_suspected received from Firebase")
     print(f"[stage-2] accel_g={g:.2f}, tilt={tilt:.1f}")
     print(f"[vitals] HR={hr_display} ({hr_status}) | SpO2={spo2_display} ({spo2_status})")
+    print(f"[gps] fall event location lat={lat:.6f}, lng={lng:.6f}")
 
     frames = grab_camera_frames(n=CAM_FRAME_COUNT)
 
@@ -454,7 +638,10 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     camera_posture, camera_says_lying = classify_camera_posture(feature_report)
     print(f"[camera posture] {camera_posture}")
 
-    prob = model.predict_proba(fv.reshape(1, -1))[0][1]
+    fv_2d = np.asarray(fv).reshape(1, -1)
+    feature_df = pd.DataFrame(fv_2d, columns=FEATURE_NAMES)
+
+    prob = model.predict_proba(feature_df)[0][1]
     ml_says_fall = prob >= FALL_THRESHOLD
 
     peak_accel = feature_report.get("peak_accel", 0)
@@ -482,13 +669,13 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     if confirmed:
         print("[result] FALL CONFIRMED — updating Firebase")
 
-        firebase_client.push_fall_event(
-            hr,
-            spo2,
-            last_vitals["lat"],
-            last_vitals["lng"],
-            image_path=debug_image_path,
-            accel_g=peak_accel,  # strongest impact G-force seen in the window
+        push_fall_event_safe(
+            hr=hr,
+            spo2=spo2,
+            lat=lat,
+            lng=lng,
+            image_path=debug_image_path if debug_image_path else "",
+            accel_g=peak_accel,  # strongest impact G-force -> shown in fall history
         )
 
         predicted_result = "FALL CONFIRMED"
@@ -522,13 +709,15 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
         hr_status=hr_status,
         spo2=spo2,
         spo2_status=spo2_status,
+        lat=lat,
+        lng=lng,
     )
 
     firebase_client.push_all_record(
         hr=hr,
         spo2=spo2,
-        lat=last_vitals["lat"],
-        lng=last_vitals["lng"],
+        lat=lat,
+        lng=lng,
         predicted_result=predicted_result,
         fall_probability=prob,
         camera_posture=camera_posture,
@@ -543,22 +732,21 @@ def process_packet(pkt, model, accel_buf, tilt_buf, last_vitals):
     print("================================================\n")
 
 
-def main():
-    validate_config()
+# ===================== FIREBASE LIVE LOOP =====================
 
-    print("========== REAL IOT ML FALL DETECTION ==========")
-    print("Mode: REAL IOT ONLY")
-    print(f"Serial Port: {SERIAL_PORT}")
-    print(f"Camera URL: {CAM_URL}")
-    print("No demo fallback will be used.")
-    print("================================================\n")
+def make_suspected_key(data):
+    if not isinstance(data, dict):
+        return None
 
-    model = load_model()
+    return (
+        data.get("ts"),
+        data.get("accel_g"),
+        data.get("tilt"),
+        data.get("event"),
+    )
 
-    test_camera_once()
 
-    ser = open_serial()
-
+def firebase_live_loop(model):
     accel_buf = deque(maxlen=WINDOW)
     tilt_buf = deque(maxlen=WINDOW)
 
@@ -567,24 +755,107 @@ def main():
         "spo2": -1,
         "lat": 0.0,
         "lng": 0.0,
+        "gps_chars": -1,
+        "gps_fix": False,
+        "has_last_fix": False,
+        "sats": 0,
+        "gps_age_ms": -1,
     }
 
-    print("\n[system] waiting for real ESP32 sensor packets...")
-    print("[system] Test 1: person lies down safely, then shake/rotate sensor board.")
-    print("[system] Test 2: person stands/sits normally, then shake/rotate sensor board.")
+    last_telemetry_ts = None
+
+    existing_suspected = firebase_get(FIREBASE_SUSPECTED_PATH)
+    last_suspected_key = make_suspected_key(existing_suspected)
+
+    if last_suspected_key is not None:
+        print("[system] Existing old suspected event found and ignored.")
+        print("[system] Trigger a new suspected fall for a new detection.")
+
+    print("\n[system] Firebase mode started.")
+    print("[system] Sensor ESP32 can now be powered by power bank.")
+    print("[system] Python reads:")
+    print(f"  - {FIREBASE_TELEMETRY_PATH}")
+    print(f"  - {FIREBASE_SUSPECTED_PATH}")
+    print("[system] Waiting for Firebase sensor data...\n")
+
+    while True:
+        telemetry_data = firebase_get(FIREBASE_TELEMETRY_PATH)
+
+        if isinstance(telemetry_data, dict):
+            telemetry_ts = telemetry_data.get("ts")
+
+            if telemetry_ts != last_telemetry_ts:
+                last_telemetry_ts = telemetry_ts
+
+                pkt = normalize_firebase_packet(
+                    telemetry_data,
+                    packet_type="telemetry",
+                )
+
+                if pkt is not None:
+                    print("FB TELEMETRY:", pkt)
+                    process_packet(
+                        pkt,
+                        model,
+                        accel_buf,
+                        tilt_buf,
+                        last_vitals,
+                    )
+
+        suspected_data = firebase_get(FIREBASE_SUSPECTED_PATH)
+
+        if isinstance(suspected_data, dict):
+            suspected_key = make_suspected_key(suspected_data)
+            event_name = suspected_data.get("event")
+
+            if event_name == "fall_suspected" and suspected_key != last_suspected_key:
+                last_suspected_key = suspected_key
+
+                pkt = normalize_firebase_packet(
+                    suspected_data,
+                    packet_type="fall_suspected",
+                )
+
+                if pkt is not None:
+                    print("FB SUSPECTED:", pkt)
+                    process_packet(
+                        pkt,
+                        model,
+                        accel_buf,
+                        tilt_buf,
+                        last_vitals,
+                    )
+
+        time.sleep(POLL_INTERVAL_SECONDS)
+
+
+# ===================== ENTRY POINT =====================
+
+def main():
+    validate_config()
+
+    print("========== REAL IOT ML FALL DETECTION ==========")
+    print("Mode: FIREBASE MODE")
+    print("Serial Port: NOT USED")
+    print(f"Camera URL: {CAM_URL}")
+    print("Sensor ESP32 can run on power bank.")
+    print("No demo fallback will be used.")
+    print("================================================\n")
+
+    model = load_model()
+
+    test_firebase_connection()
+    test_camera_once()
+
+    print("[system] Safe test method only:")
+    print("[system] Person stays safely lying down for camera confirmation.")
+    print("[system] Shake/rotate the sensor board by hand to trigger suspected fall.")
+    print("[system] Do not perform an actual fall.")
     print("[system] Fall confirmed only when ML, camera posture, and impact all support fall.")
-    print("[system] HR or SpO2 = -1 means Unknown.\n")
+    print("[system] HR or SpO2 = -1 means Unknown.")
+    print("[system] For GPS, wait until Python shows LOCATION OK before triggering fall.\n")
 
-    for pkt in serial_packets(ser):
-        print("RX:", pkt)
-
-        process_packet(
-            pkt,
-            model,
-            accel_buf,
-            tilt_buf,
-            last_vitals,
-        )
+    firebase_live_loop(model)
 
 
 if __name__ == "__main__":
