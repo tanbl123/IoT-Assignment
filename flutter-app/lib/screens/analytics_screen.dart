@@ -135,24 +135,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   _LineCard(
                     spots: _spots(data, (v) => v.hr.toDouble()),
                     color: Colors.red,
-                    minY: 40,
-                    maxY: 160,
+                    hardMin: 0,
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle("SpO2 over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.spo2.toDouble()),
                     color: Colors.blue,
-                    minY: 80,
-                    maxY: 100,
+                    hardMin: 0,
+                    hardMax: 100, // SpO2 can't exceed 100%
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle("Acceleration (motion) over time"),
                   _LineCard(
                     spots: _spots(data, (v) => v.accelG),
                     color: Colors.orange,
-                    minY: 0,
-                    maxY: 4,
+                    hardMin: 0,
                   ),
                 ],
               );
@@ -275,17 +273,36 @@ class _StatCard extends StatelessWidget {
 class _LineCard extends StatelessWidget {
   final List<FlSpot> spots;
   final Color color;
-  final double minY;
-  final double maxY;
+  final double? hardMin; // never scale below this (e.g. 0)
+  final double? hardMax; // never scale above this (e.g. 100 for SpO2)
   const _LineCard({
     required this.spots,
     required this.color,
-    required this.minY,
-    required this.maxY,
+    this.hardMin,
+    this.hardMax,
   });
+
+  /// Auto-fit the Y axis to the data (with padding) so spikes are never clipped.
+  (double, double) _range() {
+    if (spots.isEmpty) return (0, 1);
+    var lo = spots.first.y, hi = spots.first.y;
+    for (final s in spots) {
+      if (s.y < lo) lo = s.y;
+      if (s.y > hi) hi = s.y;
+    }
+    final span = hi - lo;
+    final pad = span < 1 ? 5.0 : span * 0.15;
+    lo -= pad;
+    hi += pad;
+    if (hardMin != null && lo < hardMin!) lo = hardMin!;
+    if (hardMax != null && hi > hardMax!) hi = hardMax!;
+    if (lo >= hi) hi = lo + 1; // guard against a flat/zero range
+    return (lo, hi);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final (minY, maxY) = _range();
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
