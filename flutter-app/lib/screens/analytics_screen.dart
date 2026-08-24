@@ -394,6 +394,10 @@ class _LineCard extends StatelessWidget {
                     showTitles: spots.length > 1,
                     reservedSize: 26,
                     interval: xInterval,
+                    // don't force labels at the exact data start/end — they
+                    // collide with the clean interval labels next to them.
+                    minIncluded: false,
+                    maxIncluded: false,
                     getTitlesWidget: (value, meta) {
                       final dt = DateTime.fromMillisecondsSinceEpoch(
                         value.toInt(),
