@@ -462,6 +462,15 @@ class _BarCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final labels = perDay.keys.toList();
     final maxCount = perDay.values.fold<int>(1, (a, b) => a > b ? a : b);
+    // Clean whole-number Y scale with a bit of headroom above the tallest bar.
+    final step = maxCount <= 4
+        ? 1.0
+        : maxCount <= 10
+            ? 2.0
+            : maxCount <= 25
+                ? 5.0
+                : 10.0;
+    final maxY = ((maxCount / step).floor() + 1) * step;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
@@ -469,16 +478,24 @@ class _BarCard extends StatelessWidget {
           height: 200,
           child: BarChart(
             BarChartData(
-              maxY: (maxCount + 1).toDouble(),
-              gridData: const FlGridData(show: true),
+              maxY: maxY,
+              gridData: FlGridData(show: true, horizontalInterval: step),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false)),
-                leftTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: true, reservedSize: 28),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: step,
+                    getTitlesWidget: (value, meta) => Text(
+                      value.toInt().toString(),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
                 ),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
