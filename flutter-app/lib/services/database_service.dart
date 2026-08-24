@@ -67,11 +67,24 @@ class DatabaseService {
     late StreamController<List<FallEvent>> controller;
 
     void emit() {
-      final merged = [...fromFalls, ...fromEvents]
-        // Sort by normalized time, not raw ts — the two nodes use different
-        // units (falls = ms, fall_events = s), so comparing raw ts misorders them.
-        ..sort((a, b) => b.time.compareTo(a.time)); // newest first
-      if (!controller.isClosed) controller.add(merged);
+      // Merge both nodes, then de-duplicate: the same fall is logged by the
+      // Python backend (fall_events, with location/image) AND ~10 s later by
+      // the ESP32 gateway (falls, minimal). Collapse entries within 20 s into
+      // one, keeping the richer record.
+      final all = [...fromFalls, ...fromEvents]
+        ..sort((a, b) => a.time.compareTo(b.time)); // oldest first
+      final deduped = <FallEvent>[];
+      for (final f in all) {
+        if (deduped.isNotEmpty &&
+            f.time.difference(deduped.last.time).abs() <=
+                const Duration(seconds: 20)) {
+          deduped[deduped.length - 1] = _richer(deduped.last, f);
+        } else {
+          deduped.add(f);
+        }
+      }
+      deduped.sort((a, b) => b.time.compareTo(a.time)); // newest first
+      if (!controller.isClosed) controller.add(deduped);
     }
 
     // Broadcast + lazy start so repeated widget rebuilds can re-listen safely.
@@ -92,6 +105,14 @@ class DatabaseService {
       },
     );
     return controller.stream;
+  }
+
+  /// Of two duplicate fall records, keep the one with more information
+  /// (location > image > valid vitals).
+  static FallEvent _richer(FallEvent a, FallEvent b) {
+    int score(FallEvent f) =>
+        (f.hasGps ? 4 : 0) + (f.hasImage ? 2 : 0) + (f.hr >= 0 ? 1 : 0);
+    return score(b) > score(a) ? b : a;
   }
 
   /// Read one fall node into a list of FallEvent.
