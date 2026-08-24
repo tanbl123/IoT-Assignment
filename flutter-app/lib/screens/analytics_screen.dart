@@ -315,6 +315,23 @@ class _LineCard extends StatelessWidget {
     return (lo, hi, step);
   }
 
+  /// Split the points into separate line segments wherever there's a time gap
+  /// bigger than [gapMs] (the device was off) — so we don't draw a misleading
+  /// straight line across a period when nothing was recorded.
+  List<List<FlSpot>> _segments({double gapMs = 60000}) {
+    final segs = <List<FlSpot>>[];
+    var cur = <FlSpot>[];
+    for (final s in spots) {
+      if (cur.isNotEmpty && s.x - cur.last.x > gapMs) {
+        segs.add(cur);
+        cur = [];
+      }
+      cur.add(s);
+    }
+    if (cur.isNotEmpty) segs.add(cur);
+    return segs;
+  }
+
   @override
   Widget build(BuildContext context) {
     final (minY, maxY, interval) = _range();
@@ -384,17 +401,22 @@ class _LineCard extends StatelessWidget {
               ),
               borderData: FlBorderData(show: false),
               lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: false,
-                  color: color,
-                  barWidth: 2,
-                  dotData: const FlDotData(show: false),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    color: color.withOpacity(0.12),
+                // one line per continuous run — gaps (device off) are not joined
+                for (final seg in _segments())
+                  LineChartBarData(
+                    spots: seg,
+                    isCurved: false,
+                    color: color,
+                    barWidth: 2,
+                    dotData: FlDotData(
+                      // show a dot for an isolated single reading so it's visible
+                      show: seg.length == 1,
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: color.withOpacity(0.12),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
