@@ -68,7 +68,9 @@ class DatabaseService {
 
     void emit() {
       final merged = [...fromFalls, ...fromEvents]
-        ..sort((a, b) => b.ts.compareTo(a.ts)); // newest first
+        // Sort by normalized time, not raw ts — the two nodes use different
+        // units (falls = ms, fall_events = s), so comparing raw ts misorders them.
+        ..sort((a, b) => b.time.compareTo(a.time)); // newest first
       if (!controller.isClosed) controller.add(merged);
     }
 
